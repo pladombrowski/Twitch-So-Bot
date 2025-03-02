@@ -1,0 +1,7 @@
+TWITCH_CLIENT_ID: your_client_id
+TWITCH_CLIENT_SECRET: your_client_secret
+OBS_HOST: obs_websocket_host
+OBS_PORT: obs_websocket_port
+OBS_PASSWORD: obs_websocket_password
+TWITCH_OAUTH_TOKEN: your_oath_token
+TWITCH_USERNAME: your_username

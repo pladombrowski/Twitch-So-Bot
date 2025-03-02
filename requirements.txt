@@ -1,0 +1,6 @@
+requests~=2.32.3
+Flask~=3.1.0
+flask-cors~=5.0.1
+PyYAML~=6.0.2
+twitchio~=2.10.0
+asqlite~=2.0.0
