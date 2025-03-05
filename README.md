@@ -45,6 +45,12 @@ Para obter elas no OBS entre em: Ferramentas > Configurações do servidor webso
 OBS: A opção Ativar servidor WebSocket deve estar marcada, após marcar ela clique em aplicar para iniciar o servidor WebSocket
 ```
 
+Por ultimo, na area de "Usuários Autorizados" você deve adicionar os logins dos usuários que você quer permitir que rodem os comandos de !so separados por vírgula, por exemplo:
+
+```
+usuario1,usuario2,usuario3
+```
+
 Com todas informações preenchidas clique em "SALVAR CONFIGURAÇÕES" para salvar elas e iniciar o SO_BOT.
 
 Após isto qualquer comando !so canal_da_twitch vai gerar uma busca por videos no canal informado e mostrar no seu OBS um video aleatório encontrado.
