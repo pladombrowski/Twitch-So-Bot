@@ -13,7 +13,8 @@ import asyncio
 from twitchio.ext import commands
 import threading
 import webbrowser
-
+from datetime import datetime
+import csv
 app = Flask(__name__)
 CORS(app)
 
@@ -211,6 +212,37 @@ CONFIG_TEMPLATE = """<!DOCTYPE html>
                 </div>
                 <small>Adicione os nomes exatos dos usuários do Twitch que podem usar comandos</small>
             </div>
+            <div class="form-section">
+                <h2>Configurações de Conteúdo</h2>
+                <div class="form-group">
+                    <label>Tipos de conteúdo permitidos:</label>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" name="CONTENT_TYPES" value="clip" {{ 'checked' if 'clip' in config.CONTENT_TYPES }}>
+                            Clipes
+                        </label>
+                        <label>
+                            <input type="checkbox" name="CONTENT_TYPES" value="video" {{ 'checked' if 'video' in config.CONTENT_TYPES }}>
+                            Vídeos
+                        </label>
+                        <label>
+                            <input type="checkbox" name="CONTENT_TYPES" value="highlight" {{ 'checked' if 'highlight' in config.CONTENT_TYPES }}>
+                            Highlights
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <h2>Configurações de Log</h2>
+    
+                <div class="form-group">
+                    <label for="log_path">Caminho do arquivo de log:</label>
+                    <input type="text" id="log_path" name="LOG_FILE_PATH" 
+                        value="{{ config.LOG_FILE_PATH }}" 
+                        placeholder="Ex: command_log.csv">
+                </div>
+                <small>Arquivo CSV com histórico de comandos executados</small>
+            </div>
             <button type="submit">Salvar Configurações</button>
         </form>
     </div>
@@ -228,6 +260,157 @@ global selected_video_duration
 restart_bot_event = threading.Event()
 app_should_restart = threading.Event()
 global_config = None
+
+
+def log_command_usage(command: str, channel: str, requester: str):
+    log_file = global_config.get('LOG_FILE_PATH', 'command_log.csv')
+
+    fieldnames = ['timestamp', 'command', 'channel', 'requester']
+    new_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'command': command,
+        'channel': channel,
+        'requester': requester.lower(),
+    }
+
+    try:
+        with open(log_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if f.tell() == 0:
+                writer.writeheader()
+            writer.writerow(new_entry)
+    except Exception as e:
+        print(f"Erro ao registrar comando: {str(e)}")
+
+
+def get_channel_clips(user_id):
+    access_token = get_access_token()
+    headers = {
+        'Client-ID': global_config['TWITCH_CLIENT_ID'],
+        'Authorization': f'Bearer {access_token}'
+    }
+
+    clips = []
+    cursor = None
+
+    try:
+        while True:
+            params = {
+                'broadcaster_id': user_id,
+                'first': 100,
+            }
+            if cursor:
+                params['after'] = cursor
+
+            response = requests.get(
+                'https://api.twitch.tv/helix/clips',
+                headers=headers,
+                params=params
+            )
+
+            if response.status_code != 200:
+                break
+
+            data = response.json()
+            new_clips = [c for c in data.get('data', []) if c['duration'] <= int(global_config['MAX_VIDEO_TIME'])]
+            clips.extend(new_clips)
+
+            cursor = data.get('pagination', {}).get('cursor')
+            if not cursor or len(clips) >= 100:
+                break
+
+        return clips
+
+    except Exception as e:
+        print(f"Erro nos clipes: {str(e)}")
+        return []
+
+
+def get_channel_videos(user_id, video_type):
+    access_token = get_access_token()
+    headers = {
+        'Client-ID': global_config['TWITCH_CLIENT_ID'],
+        'Authorization': f'Bearer {access_token}'
+    }
+
+    videos = []
+    cursor = None
+
+    while True:
+        params = {
+            'user_id': user_id,
+            'first': 100,
+            'type': video_type
+        }
+        if cursor:
+            params['after'] = cursor
+
+        response = requests.get(
+            'https://api.twitch.tv/helix/videos',
+            headers=headers,
+            params=params
+        )
+
+        if response.status_code != 200:
+            break
+
+        data = response.json()
+        videos.extend(data.get('data', []))
+
+        cursor = data.get('pagination', {}).get('cursor')
+        if not cursor:
+            break
+
+    filtered = []
+    for v in videos:
+        try:
+            duration = interval_string_to_seconds(v['duration'])
+            if duration <= int(global_config['MAX_VIDEO_TIME']):
+                filtered.append(v)
+        except:
+            continue
+    return filtered
+
+
+def get_channel_content(user_id):
+    content = []
+
+    # Busca clipes
+    if 'clip' in global_config['CONTENT_TYPES']:
+        clips = get_channel_clips(user_id)
+        for clip in clips:
+            clip.update({
+                'content_type': 'clip',
+                'embed_url': f"https://clips.twitch.tv/embed?clip={clip['id']}&parent=twitch.tv&autoplay=true",
+                'duration_seconds': clip['duration']
+            })
+        content.extend(clips)
+
+    # Busca vídeos comuns
+    if 'video' in global_config['CONTENT_TYPES']:
+        videos = get_channel_videos(user_id, 'archive')
+        for video in videos:
+            video_id = video['url'].split('/')[-1]
+            video.update({
+                'content_type': 'video',
+                'embed_url': f"https://player.twitch.tv/?video=v{video_id}&parent=twitch.tv&autoplay=true",
+                'duration_seconds': interval_string_to_seconds(video['duration'])
+            })
+        content.extend(videos)
+
+    # Busca highlights
+    if 'highlight' in global_config['CONTENT_TYPES']:
+        highlights = get_channel_videos(user_id, 'highlight')
+        for highlight in highlights:
+            video_id = highlight['url'].split('/')[-1]
+            highlight.update({
+                'content_type': 'highlight',
+                'embed_url': f"https://player.twitch.tv/?video=v{video_id}&parent=twitch.tv&autoplay=true",
+                'duration_seconds': interval_string_to_seconds(highlight['duration'])
+            })
+        content.extend(highlights)
+
+    return [c for c in content if c['duration_seconds'] <= int(global_config['MAX_VIDEO_TIME'])]
 
 
 def load_config():
@@ -384,6 +567,11 @@ class TwitchBot(commands.Bot):
             )
 
             if response.status_code == 200:
+                log_command_usage(
+                    command='so',
+                    channel=channel_name.lower(),
+                    requester=ctx.author.name
+                )
                 await ctx.send(f"🎥 Reproduzindo conteúdo de {channel_name}!")
                 remove_browser_source(selected_video_duration)
             else:
@@ -509,84 +697,6 @@ def get_channel_id(channel_name):
     return None
 
 
-def get_channel_videos(user_id):
-    access_token = get_access_token()
-    headers = {
-        'Client-ID': global_config['TWITCH_CLIENT_ID'],
-        'Authorization': f'Bearer {access_token}'
-    }
-
-    videos = []
-    cursor = None
-
-    while True:
-        params = {'user_id': user_id, 'first': 100}
-        if cursor:
-            params['after'] = cursor
-
-        response = requests.get(
-            'https://api.twitch.tv/helix/videos',
-            headers=headers,
-            params=params
-        )
-
-        if response.status_code != 200:
-            break
-
-        data = response.json()
-        videos.extend(data.get('data', []))
-
-        cursor = data.get('pagination', {}).get('cursor')
-        if not cursor:
-            break
-
-    return [v for v in videos if interval_string_to_seconds(v['duration']) <= int(global_config['MAX_VIDEO_TIME'])]
-
-
-def get_channel_clips(user_id):
-    access_token = get_access_token()
-    headers = {
-        'Client-ID': global_config['TWITCH_CLIENT_ID'],
-        'Authorization': f'Bearer {access_token}'
-    }
-
-    clips = []
-    cursor = None
-
-    try:
-        while len(clips) < 100:
-            params = {
-                'broadcaster_id': user_id,
-                'first': 100,
-                'started_at': '2020-01-01T00:00:00Z'
-            }
-            if cursor:
-                params['after'] = cursor
-
-            response = requests.get(
-                'https://api.twitch.tv/helix/clips',
-                headers=headers,
-                params=params
-            )
-
-            if response.status_code != 200:
-                break
-
-            data = response.json()
-            new_clips = [c for c in data.get('data', []) if c['duration'] <= int(global_config['MAX_VIDEO_TIME'])]
-            clips.extend(new_clips)
-
-            cursor = data.get('pagination', {}).get('cursor')
-            if not cursor:
-                break
-
-        return clips[:100]
-
-    except Exception as e:
-        print(f"Erro nos clipes: {str(e)}")
-        return []
-
-
 def create_browser_source(video_url, video_duration):
     ws = obsws(global_config['OBS_HOST'], global_config['OBS_PORT'], global_config['OBS_PASSWORD'])
     try:
@@ -694,37 +804,21 @@ def play_random_video():
         if not channel:
             return jsonify({'error': 'Nome do canal necessário'}), 400
 
-        print(f"\nIniciando requisição para: {channel}")
-
         user_id = get_channel_id(channel)
         if not user_id:
             return jsonify({'error': 'Canal não encontrado'}), 404
 
-        media_type = "clipe"
-        content = get_channel_clips(user_id)
-        if not content:
-            media_type = "vídeo"
-            content = get_channel_videos(user_id)
-            if not content:
-                return jsonify({'error': 'Nenhum conteúdo encontrado'}), 404
+        content_list = get_channel_content(user_id)
+        if not content_list:
+            return jsonify({'error': 'Nenhum conteúdo encontrado (clipes/vídeos/highlights)'}), 404
 
-        selected = random.choice(content)
-        selected_video_duration = selected['duration'] if media_type == "clipe" else interval_string_to_seconds(
-            selected['duration'])
-
-        if media_type == "clipe":
-            embed_url = f"https://clips.twitch.tv/embed?clip={selected['id']}&parent=twitch.tv&autoplay=true"
-        else:
-            video_id = selected['url'].split('/')[-1]
-            embed_url = f"https://player.twitch.tv/?video=v{video_id}&parent=twitch.tv&autoplay=true"
-
-        print(f"Reproduzindo {media_type}: {selected['title']}")
-        create_browser_source(embed_url, selected_video_duration)
+        selected = random.choice(content_list)
+        selected_video_duration = selected['duration_seconds']
+        create_browser_source(selected['embed_url'], selected_video_duration)
 
         return jsonify({
             'status': 'success',
-            'channel': channel,
-            'media_type': media_type,
+            'content_type': selected['content_type'],
             'title': selected['title'],
             'duration': selected_video_duration
         }), 200
@@ -732,8 +826,6 @@ def play_random_video():
     except Exception as e:
         print(f"Erro completo: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
-    # finally:
-    # remove_video(duration)
 
 
 def load_or_create_config():
@@ -744,8 +836,10 @@ def load_or_create_config():
         'OBS_PORT': 4455,
         'OBS_PASSWORD': 'obs_websocket_password',
         'TWITCH_USERNAME': 'your_username',
+        'CONTENT_TYPES': ['clip', 'video', 'highlight'],
         'AUTHORIZED_USERS': ['some_username'],
         'TWITCH_REDIRECT_URI': 'http://localhost:5000/auth/callback',
+        'LOG_FILE_PATH': 'command_log.csv',
         'MAX_VIDEO_TIME': 30
     }
 
@@ -791,6 +885,8 @@ def config_editor():
                 'TWITCH_USERNAME': request.form['TWITCH_USERNAME'],
                 'TWITCH_REDIRECT_URI': global_config['TWITCH_REDIRECT_URI'],
                 'AUTHORIZED_USERS': auth_users,
+                'CONTENT_TYPES': request.form.getlist('CONTENT_TYPES'),
+                'LOG_FILE_PATH': request.form['LOG_FILE_PATH'],
                 'MAX_VIDEO_TIME': request.form['MAX_VIDEO_TIME']
             }
 
