@@ -2,11 +2,11 @@ import traceback
 import requests
 import random
 
-from flask import Flask, request, jsonify, render_template_string, redirect
+from flask import Flask, request, jsonify, render_template_string
 
 from flask_cors import CORS
 import time
-from obswebsocket import obsws, requests as obsrequests
+from obswebsocket import obsws, requests as obs_requests
 import re
 import yaml
 import asyncio
@@ -180,6 +180,24 @@ CONFIG_TEMPLATE = """<!DOCTYPE html>
                            value="{{ config.MAX_VIDEO_TIME }}" required>
                 </div>
             </div>
+            
+            <div class="form-section">
+                <h2>Restrição Horária</h2>
+                <div class="form-group">
+                    <label>Bloquear comandos entre:</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="number" id="block_start" name="BLOCK_START" 
+                            value="{{ config.BLOCKED_PERIOD.split('-')[0] }}" 
+                            min="0" max="23" step="1" style="width: 80px;">
+                        <span>e</span>
+                        <input type="number" id="block_end" name="BLOCK_END" 
+                            value="{{ config.BLOCKED_PERIOD.split('-')[1] }}" 
+                            min="0" max="23" step="1" style="width: 80px;">
+                        <span>horas (0-23)</span>
+                    </div>
+                </div>
+                <small>Os comandos serão bloqueados durante este período</small>
+            </div>
 
             <div class="form-section">
                 <h2>Configurações do OBS</h2>
@@ -208,7 +226,7 @@ CONFIG_TEMPLATE = """<!DOCTYPE html>
                     <label for="authorized_users">Nomes de usuário permitidos (separados por vírgula):</label>
                         <input type="text" id="authorized_users" name="AUTHORIZED_USERS" 
                             value="{{ ','.join(config.AUTHORIZED_USERS) }}" 
-                            placeholder="Ex: seuusuario,moderador1,moderador2">
+                            placeholder="Ex: seu_usuário,moderador1,moderador2">
                 </div>
                 <small>Adicione os nomes exatos dos usuários do Twitch que podem usar comandos</small>
             </div>
@@ -219,7 +237,7 @@ CONFIG_TEMPLATE = """<!DOCTYPE html>
                     <div class="checkbox-group">
                         <label>
                             <input type="checkbox" name="CONTENT_TYPES" value="clip" {{ 'checked' if 'clip' in config.CONTENT_TYPES }}>
-                            Clipes
+                            Clip's
                         </label>
                         <label>
                             <input type="checkbox" name="CONTENT_TYPES" value="video" {{ 'checked' if 'video' in config.CONTENT_TYPES }}>
@@ -259,8 +277,21 @@ global selected_video_duration
 
 restart_bot_event = threading.Event()
 app_should_restart = threading.Event()
-global_config = None
+global_config = {}
 
+
+def is_command_blocked():
+    try:
+        blocked_period = global_config.get('BLOCKED_PERIOD', '08-22')
+        start_hour, end_hour = map(int, blocked_period.split('-'))
+        current_hour = datetime.now().hour
+
+        if start_hour < end_hour:
+            return start_hour <= current_hour < end_hour
+        else:
+            return current_hour >= start_hour or current_hour < end_hour
+    except:
+        return False
 
 def log_command_usage(command: str, channel: str, requester: str):
     log_file = global_config.get('LOG_FILE_PATH', 'command_log.csv')
@@ -322,7 +353,7 @@ def get_channel_clips(user_id):
         return clips
 
     except Exception as e:
-        print(f"Erro nos clipes: {str(e)}")
+        print(f"Erro nos clip's: {str(e)}")
         return []
 
 
@@ -367,7 +398,8 @@ def get_channel_videos(user_id, video_type):
             duration = interval_string_to_seconds(v['duration'])
             if duration <= int(global_config['MAX_VIDEO_TIME']):
                 filtered.append(v)
-        except:
+        except Exception as e:
+            print(f"Erro nos videos: {str(e)}")
             continue
     return filtered
 
@@ -375,7 +407,6 @@ def get_channel_videos(user_id, video_type):
 def get_channel_content(user_id):
     content = []
 
-    # Busca clipes
     if 'clip' in global_config['CONTENT_TYPES']:
         clips = get_channel_clips(user_id)
         for clip in clips:
@@ -418,6 +449,9 @@ def load_config():
     try:
         with open("config.yaml", "r") as file:
             global_config = yaml.safe_load(file)
+            # Definir padrão se não existir
+            if 'BLOCKED_PERIOD' not in global_config:
+                global_config['BLOCKED_PERIOD'] = '08-23'
     except FileNotFoundError:
         global_config = {
             'TWITCH_CLIENT_ID': 'your_client_id',
@@ -426,7 +460,8 @@ def load_config():
             'OBS_PORT': 4455,
             'OBS_PASSWORD': 'obs_websocket_password',
             'TWITCH_USERNAME': 'your_username',
-            'TWITCH_REDIRECT_URI': 'http://localhost:5000/auth/callback'
+            'TWITCH_REDIRECT_URI': 'http://localhost:5000/auth/callback',
+            'BLOCKED_PERIOD': '08-23'
         }
 
 
@@ -529,7 +564,7 @@ class TwitchBot(commands.Bot):
                 self._connection._token = self.token
                 await self.connect()
             else:
-                print("Falha na renovação do token. Requer reautenticação.")
+                print("Falha na renovação do token. Requer autenticação.")
                 auth_complete_event.clear()
                 start_auth_flow()
 
@@ -549,6 +584,10 @@ class TwitchBot(commands.Bot):
 
         if not is_authorized:
             await ctx.send("❌ Você não tem permissão para usar este comando!")
+            return
+
+        if is_command_blocked():
+            await ctx.send("⏰ O !so está bloqueado neste horário!")
             return
 
         if not channel_name:
@@ -628,7 +667,7 @@ def auth_callback():
 
 
 def interval_string_to_seconds(input_str: str) -> int:
-    SUFFIX_MAP = {
+    suffix_map = {
         'y': 'y',
         'year': 'y',
         'years': 'y',
@@ -648,7 +687,7 @@ def interval_string_to_seconds(input_str: str) -> int:
         'second': 's',
         'seconds': 's',
     }
-    SUFFIX_MULTIPLES = {
+    suffix_multiples = {
         'y': 60 * 60 * 24 * 365,
         'w': 60 * 60 * 24 * 7,
         'd': 60 * 60 * 24,
@@ -661,10 +700,10 @@ def interval_string_to_seconds(input_str: str) -> int:
     for match in pattern.finditer(input_str):
         amount = int(match.group(1))
         suffix = match.group(2).lower()
-        if suffix not in SUFFIX_MAP:
+        if suffix not in suffix_map:
             raise ValueError(f'Intervalo inválido: {input_str}')
-        index = SUFFIX_MAP[suffix]
-        total += amount * SUFFIX_MULTIPLES[index]
+        index = suffix_map[suffix]
+        total += amount * suffix_multiples[index]
     return total
 
 
@@ -697,7 +736,7 @@ def get_channel_id(channel_name):
     return None
 
 
-def create_browser_source(video_url, video_duration):
+def create_browser_source(video_url):
     ws = obsws(global_config['OBS_HOST'], global_config['OBS_PORT'], global_config['OBS_PASSWORD'])
     try:
         ws.connect()
@@ -706,18 +745,19 @@ def create_browser_source(video_url, video_duration):
         source_name = "TwitchVideo"
 
         try:
-            scene_item_id = ws.call(obsrequests.GetSceneItemId(
+            scene_item_id = ws.call(obs_requests.GetSceneItemId(
                 sceneName=scene_name,
                 sourceName=source_name
             )).datain.get('sceneItemId')
 
             if scene_item_id:
-                ws.call(obsrequests.RemoveSceneItem(
+                ws.call(obs_requests.RemoveSceneItem(
                     sceneName=scene_name,
                     sceneItemId=scene_item_id
                 ))
                 time.sleep(0.5)
-        except:
+        except Exception as e:
+            print(f"Erro OBS: {str(e)}")
             pass
 
         settings = {
@@ -729,7 +769,7 @@ def create_browser_source(video_url, video_duration):
             "restart_when_active": True
         }
 
-        creation_response = ws.call(obsrequests.CreateInput(
+        creation_response = ws.call(obs_requests.CreateInput(
             sceneName=scene_name,
             inputName=source_name,
             inputKind="browser_source",
@@ -741,7 +781,7 @@ def create_browser_source(video_url, video_duration):
             raise Exception("Falha ao criar fonte OBS")
 
         time.sleep(1)
-        scene_item_id = ws.call(obsrequests.GetSceneItemId(
+        scene_item_id = ws.call(obs_requests.GetSceneItemId(
             sceneName=scene_name,
             sourceName=source_name
         )).datain.get('sceneItemId')
@@ -749,7 +789,7 @@ def create_browser_source(video_url, video_duration):
         if not scene_item_id:
             raise Exception("Fonte não encontrada")
 
-        ws.call(obsrequests.SetSceneItemTransform(
+        ws.call(obs_requests.SetSceneItemTransform(
             sceneName=scene_name,
             sceneItemId=scene_item_id,
             transform={
@@ -777,13 +817,13 @@ def remove_browser_source(time_to_sleep):
 
         scene_name = "Twitch Auto"
         source_name = "TwitchVideo"
-        scene_item_id = ws.call(obsrequests.GetSceneItemId(
+        scene_item_id = ws.call(obs_requests.GetSceneItemId(
             sceneName=scene_name,
             sourceName=source_name
         )).datain.get('sceneItemId')
 
         if scene_item_id:
-            ws.call(obsrequests.RemoveSceneItem(
+            ws.call(obs_requests.RemoveSceneItem(
                 sceneName=scene_name,
                 sceneItemId=scene_item_id
             ))
@@ -810,11 +850,11 @@ def play_random_video():
 
         content_list = get_channel_content(user_id)
         if not content_list:
-            return jsonify({'error': 'Nenhum conteúdo encontrado (clipes/vídeos/highlights)'}), 404
+            return jsonify({'error': 'Nenhum conteúdo encontrado (clip''s/vídeos/highlights)'}), 404
 
         selected = random.choice(content_list)
         selected_video_duration = selected['duration_seconds']
-        create_browser_source(selected['embed_url'], selected_video_duration)
+        create_browser_source(selected['embed_url'])
 
         return jsonify({
             'status': 'success',
@@ -826,37 +866,6 @@ def play_random_video():
     except Exception as e:
         print(f"Erro completo: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
-
-
-def load_or_create_config():
-    default_config = {
-        'TWITCH_CLIENT_ID': 'your_client_id',
-        'TWITCH_CLIENT_SECRET': 'your_client_secret',
-        'OBS_HOST': 'localhost',
-        'OBS_PORT': 4455,
-        'OBS_PASSWORD': 'obs_websocket_password',
-        'TWITCH_USERNAME': 'your_username',
-        'CONTENT_TYPES': ['clip', 'video', 'highlight'],
-        'AUTHORIZED_USERS': ['some_username'],
-        'TWITCH_REDIRECT_URI': 'http://localhost:5000/auth/callback',
-        'LOG_FILE_PATH': 'command_log.csv',
-        'MAX_VIDEO_TIME': 30
-    }
-
-    try:
-        with open("config.yaml", "r") as file:
-            config = yaml.safe_load(file)
-            if 'AUTHORIZED_USERS' not in config:
-                config['AUTHORIZED_USERS'] = default_config['AUTHORIZED_USERS']
-            elif not isinstance(config['AUTHORIZED_USERS'], list):
-                config['AUTHORIZED_USERS'] = [config['AUTHORIZED_USERS']]
-    except FileNotFoundError:
-        config = default_config
-        with open("config.yaml", "w") as file:
-            yaml.dump(config, file)
-
-    return config
-
 
 @app.route('/config', methods=['GET', 'POST'])
 def config_editor():
@@ -876,6 +885,13 @@ def config_editor():
             if not auth_users:
                 raise ValueError("Pelo menos um usuário autorizado deve ser informado")
 
+            # Validação do período bloqueado
+            block_start = request.form['BLOCK_START'].zfill(2)
+            block_end = request.form['BLOCK_END'].zfill(2)
+
+            if not (0 <= int(block_start) <= 23 and 0 <= int(block_end) <= 23):
+                raise ValueError("Horas devem estar entre 00 e 23")
+
             new_config = {
                 'TWITCH_CLIENT_ID': request.form['TWITCH_CLIENT_ID'],
                 'TWITCH_CLIENT_SECRET': request.form['TWITCH_CLIENT_SECRET'],
@@ -887,13 +903,13 @@ def config_editor():
                 'AUTHORIZED_USERS': auth_users,
                 'CONTENT_TYPES': request.form.getlist('CONTENT_TYPES'),
                 'LOG_FILE_PATH': request.form['LOG_FILE_PATH'],
+                'BLOCKED_PERIOD': f"{block_start}-{block_end}",
                 'MAX_VIDEO_TIME': request.form['MAX_VIDEO_TIME']
             }
 
             global_config = new_config
             save_config()
 
-            # Dispara o reinício do bot
             restart_bot_event.set()
 
             message = "Configurações salvas e aplicação reiniciada!"

@@ -13,3 +13,4 @@ TWITCH_CLIENT_ID: your_client_id
 TWITCH_CLIENT_SECRET: your_client_secret
 TWITCH_REDIRECT_URI: http://localhost:5000/auth/callback
 TWITCH_USERNAME: your_username
+BLOCKED_PERIOD: 08-23
