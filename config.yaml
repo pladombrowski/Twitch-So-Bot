@@ -1,5 +1,6 @@
 AUTHORIZED_USERS:
-- some_user_name
+- pedrodombrowski
+- sauloecker
 CONTENT_TYPES:
 - clip
 - video
@@ -7,10 +8,9 @@ CONTENT_TYPES:
 LOG_FILE_PATH: command_log.csv
 MAX_VIDEO_TIME: '30'
 OBS_HOST: localhost
-OBS_PASSWORD: obs_websocket_password
+OBS_PASSWORD: pBh6O8M3sq7vmZbE
 OBS_PORT: 4455
-TWITCH_CLIENT_ID: your_client_id
-TWITCH_CLIENT_SECRET: your_client_secret
-TWITCH_REDIRECT_URI: http://localhost:5000/auth/callback
-TWITCH_USERNAME: your_username
-BLOCKED_PERIOD: 08-23
+TWITCH_CLIENT_ID: km8d199im6uwb25bojrkeql2nigjl1
+TWITCH_CLIENT_SECRET: bu8xo9cfmxrmxbrb4nhnb0afte676h
+TWITCH_USERNAME: pedrodombrowski
+BLOCKED_PERIOD: 08-12
