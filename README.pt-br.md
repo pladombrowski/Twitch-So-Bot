@@ -1,5 +1,7 @@
 # Twitch SO Bot (Bot de Shoutout)
 
+[Read in English (Leia em Inglês)](README.md)
+
 Um bot para Twitch que exibe clipes, vídeos ou destaques aleatórios de canais específicos sem depender de serviços de terceiros. O bot se integra ao OBS para mostrar automaticamente o conteúdo quando usuários autorizados executam o comando `!so` no chat da sua Twitch.
 
 ## Funcionalidades

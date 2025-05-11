@@ -15,265 +15,16 @@ import csv
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
 import urllib3
+import aiohttp
 
 # Disable warnings for insecure requests (necessary for self-signed certificates)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from obswebsocket import obsws, requests as obs_requests
 from twitchio.ext import commands
 
-# HTML template for configuration page - same as original
-CONFIG_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuração do Bot Twitch</title>
-    <style>
-        :root {
-            --bg: #282a36;
-            --fg: #f8f8f2;
-            --purple: #bd93f9;
-            --pink: #ff79c6;
-            --cyan: #8be9fd;
-            --green: #50fa7b;
-            --orange: #ffb86c;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--fg);
-            line-height: 1.6;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: rgba(40, 42, 54, 0.9);
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
-        }
-
-        h1 {
-            color: var(--purple);
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-        }
-
-        .form-section {
-            margin-bottom: 30px;
-            padding: 20px;
-            background: rgba(68, 71, 90, 0.3);
-            border-radius: 8px;
-        }
-
-        h2 {
-            color: var(--cyan);
-            margin-bottom: 15px;
-            font-size: 1.4em;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: var(--green);
-            font-weight: 500;
-        }
-
-        input {
-            width: 100%;
-            padding: 12px;
-            background: rgba(98, 114, 164, 0.2);
-            border: 2px solid var(--purple);
-            border-radius: 5px;
-            color: var(--fg);
-            font-size: 16px;
-            transition: all 0.3s ease;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: var(--cyan);
-            background: rgba(98, 114, 164, 0.3);
-        }
-
-        button {
-            background: var(--purple);
-            color: var(--bg);
-            border: none;
-            padding: 15px 30px;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: block;
-            width: 100%;
-            font-weight: bold;
-            text-transform: uppercase;
-        }
-
-        button:hover {
-            background: var(--cyan);
-            color: var(--bg);
-        }
-
-        .alert {
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            text-align: center;
-        }
-
-        .success {
-            background: rgba(80, 250, 123, 0.2);
-            border: 2px solid var(--green);
-        }
-
-        .error {
-            background: rgba(255, 121, 198, 0.2);
-            border: 2px solid var(--pink);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Configuração do Bot Twitch</h1>
-
-        {% if message %}
-        <div class="alert {{ message_type }}">{{ message }}</div>
-        {% endif %}
-
-        <form method="post">
-            <div class="form-section">
-                <h2>Configurações da Twitch</h2>
-
-                <div class="form-group">
-                    <label for="twitch_username">Nome de Usuário Twitch:</label>
-                    <input type="text" id="twitch_username" name="TWITCH_USERNAME" 
-                           value="{{ config.TWITCH_USERNAME }}" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="client_id">Client ID:</label>
-                    <input type="text" id="client_id" name="TWITCH_CLIENT_ID" 
-                           value="{{ config.TWITCH_CLIENT_ID }}" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="client_secret">Client Secret:</label>
-                    <input type="text" id="client_secret" name="TWITCH_CLIENT_SECRET" 
-                           value="{{ config.TWITCH_CLIENT_SECRET }}" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="client_secret">Tempo máximo dos vídeos em segundos:</label>
-                    <input type="number" id="max_video_time" name="MAX_VIDEO_TIME" 
-                           value="{{ config.MAX_VIDEO_TIME }}" required>
-                </div>
-            </div>
-
-            <div class="form-section">
-                <h2>Restrição Horária</h2>
-                <div class="form-group">
-                    <label>Bloquear comandos entre:</label>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="number" id="block_start" name="BLOCK_START" 
-                            value="{{ config.BLOCKED_PERIOD.split('-')[0] }}" 
-                            min="0" max="23" step="1" style="width: 80px;">
-                        <span>e</span>
-                        <input type="number" id="block_end" name="BLOCK_END" 
-                            value="{{ config.BLOCKED_PERIOD.split('-')[1] }}" 
-                            min="0" max="23" step="1" style="width: 80px;">
-                        <span>horas (0-23)</span>
-                    </div>
-                </div>
-                <small>Os comandos serão bloqueados durante este período</small>
-            </div>
-
-            <div class="form-section">
-                <h2>Configurações do OBS</h2>
-
-                <div class="form-group">
-                    <label for="obs_host">Host OBS:</label>
-                    <input type="text" id="obs_host" name="OBS_HOST" 
-                           value="{{ config.OBS_HOST }}" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="obs_port">Porta OBS:</label>
-                    <input type="number" id="obs_port" name="OBS_PORT" 
-                           value="{{ config.OBS_PORT }}" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="obs_password">Senha do OBS WebSocket:</label>
-                    <input type="text" id="obs_password" name="OBS_PASSWORD" 
-                           value="{{ config.OBS_PASSWORD }}" required>
-                </div>
-            </div>
-            <div class="form-section">
-                <h2>Usuários Autorizados</h2>
-                <div class="form-group">
-                    <label for="authorized_users">Nomes de usuário permitidos (separados por vírgula):</label>
-                        <input type="text" id="authorized_users" name="AUTHORIZED_USERS" 
-                            value="{{ ','.join(config.AUTHORIZED_USERS) }}" 
-                            placeholder="Ex: seu_usuário,moderador1,moderador2">
-                </div>
-                <small>Adicione os nomes exatos dos usuários do Twitch que podem usar comandos</small>
-            </div>
-            <div class="form-section">
-                <h2>Configurações de Conteúdo</h2>
-                <div class="form-group">
-                    <label>Tipos de conteúdo permitidos:</label>
-                    <div class="checkbox-group">
-                        <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="clip" {{ 'checked' if 'clip' in config.CONTENT_TYPES }}>
-                            Clip's
-                        </label>
-                        <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="video" {{ 'checked' if 'video' in config.CONTENT_TYPES }}>
-                            Vídeos
-                        </label>
-                        <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="highlight" {{ 'checked' if 'highlight' in config.CONTENT_TYPES }}>
-                            Highlights
-                        </label>
-                    </div>
-                </div>
-            </div>
-            <div class="form-section">
-                <h2>Configurações de Log</h2>
-
-                <div class="form-group">
-                    <label for="log_path">Caminho do arquivo de log:</label>
-                    <input type="text" id="log_path" name="LOG_FILE_PATH" 
-                        value="{{ config.LOG_FILE_PATH }}" 
-                        placeholder="Ex: command_log.csv">
-                </div>
-                <small>Arquivo CSV com histórico de comandos executados</small>
-            </div>
-            <button type="submit">Salvar Configurações</button>
-        </form>
-    </div>
-</body>
-</html>
-"""
 
 class Config:
     """Class to manage application configuration"""
@@ -285,7 +36,7 @@ class Config:
         'OBS_PORT': 4455,
         'OBS_PASSWORD': 'obs_websocket_password',
         'TWITCH_USERNAME': 'your_username',
-        'TWITCH_REDIRECT_URI': 'http://localhost:5000/auth/callback',
+        'TWITCH_REDIRECT_URI': 'https://localhost:5000/auth/callback',
         'BLOCKED_PERIOD': '08-23',
         'AUTHORIZED_USERS': [],
         'CONTENT_TYPES': ['clip', 'video', 'highlight'],
@@ -359,48 +110,48 @@ class TokenManager:
         with open(self.tokens_path, "w") as f:
             yaml.dump(tokens, f)
 
-    def refresh_tokens(self) -> bool:
+    async def refresh_tokens(self) -> bool:
         """Refresh tokens using the refresh token"""
         tokens = self.load_tokens()
         if not tokens or 'refresh_token' not in tokens:
             return False
 
         try:
-            response = requests.post(
-                'https://id.twitch.tv/oauth2/token',
-                params={
-                    'client_id': self.config.get('TWITCH_CLIENT_ID'),
-                    'client_secret': self.config.get('TWITCH_CLIENT_SECRET'),
-                    'grant_type': 'refresh_token',
-                    'refresh_token': tokens['refresh_token']
-                }
-            )
-            response.raise_for_status()
-
-            token_data = response.json()
-            self.save_tokens(
-                token_data['access_token'],
-                token_data.get('refresh_token', tokens['refresh_token']),
-                token_data['expires_in']
-            )
-            return True
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    'https://id.twitch.tv/oauth2/token',
+                    data={  # Changed from params to data
+                        'client_id': self.config.get('TWITCH_CLIENT_ID'),
+                        'client_secret': self.config.get('TWITCH_CLIENT_SECRET'),
+                        'grant_type': 'refresh_token',
+                        'refresh_token': tokens['refresh_token']
+                    }
+                ) as response:
+                    response.raise_for_status()
+                    token_data = await response.json()
+                    self.save_tokens(
+                        token_data['access_token'],
+                        token_data.get('refresh_token', tokens['refresh_token']),
+                        token_data['expires_in']
+                    )
+                    return True
         except Exception as e:
             print(f"Error refreshing token: {str(e)}")
             return False
 
-    def get_valid_token(self) -> Optional[str]:
+    async def get_valid_token(self) -> Optional[str]:
         """Get a valid access token, refreshing if necessary"""
         tokens = self.load_tokens()
 
         if tokens and tokens['expires_at'] > time.time() + 60:  # 1 minute margin
             return tokens['access_token']
 
-        if tokens and self.refresh_tokens():
+        if tokens and await self.refresh_tokens(): # Made call async
             return self.load_tokens()['access_token']
 
         return None
 
-    def get_app_access_token(self) -> str:
+    async def get_app_access_token(self) -> Optional[str]:
         """Get an application access token for API requests"""
         auth_url = 'https://id.twitch.tv/oauth2/token'
         params = {
@@ -408,13 +159,20 @@ class TokenManager:
             'client_secret': self.config.get('TWITCH_CLIENT_SECRET'),
             'grant_type': 'client_credentials'
         }
-        response = requests.post(auth_url, params=params)
-        return response.json().get('access_token')
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(auth_url, data=params) as response: # Changed from params to data
+                    response.raise_for_status()
+                    token_data = await response.json()
+                    return token_data.get('access_token')
+        except Exception as e:
+            print(f"Error getting app access token: {str(e)}")
+            return None
 
     def start_auth_flow(self) -> None:
         """Start the OAuth authentication flow"""
         # Use hardcoded redirect URI that supports both HTTP and HTTPS
-        redirect_uri = "http://localhost:5000/auth/callback"
+        redirect_uri = "https://localhost:5000/auth/callback" # Changed to HTTPS
         params = {
             'client_id': self.config.get('TWITCH_CLIENT_ID'),
             'redirect_uri': redirect_uri,
@@ -489,42 +247,48 @@ class TwitchAPI:
         self._cache_expiry = {}   # Expiry times for cache entries
         self.cache_duration = 300  # Cache duration in seconds (5 minutes)
 
-    def get_channel_id(self, channel_name: str) -> Optional[str]:
+    async def get_channel_id(self, channel_name: str) -> Optional[str]:
         """Get channel ID from channel name, using cache if available"""
-        # Check cache first
         current_time = time.time()
         if channel_name in self._channel_cache and self._cache_expiry.get(f"channel_{channel_name}", 0) > current_time:
             return self._channel_cache[channel_name]
 
-        # If not in cache or expired, fetch from API
-        access_token = self.token_manager.get_app_access_token()
+        access_token = await self.token_manager.get_app_access_token()
+        if not access_token:
+            print("Error: Could not retrieve app access token for get_channel_id.")
+            return None
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
             'Authorization': f'Bearer {access_token}'
         }
 
         try:
-            response = requests.get(
-                f'https://api.twitch.tv/helix/users?login={channel_name}',
-                headers=headers
-            )
-
-            if response.status_code == 200:
-                data = response.json().get('data', [])
-                if data:
-                    channel_id = data[0]['id']
-                    # Update cache
-                    self._channel_cache[channel_name] = channel_id
-                    self._cache_expiry[f"channel_{channel_name}"] = current_time + self.cache_duration
-                    return channel_id
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f'https://api.twitch.tv/helix/users?login={channel_name}',
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        data_list = data.get('data', [])
+                        if data_list:
+                            channel_id = data_list[0]['id']
+                            self._channel_cache[channel_name] = channel_id
+                            self._cache_expiry[f"channel_{channel_name}"] = current_time + self.cache_duration
+                            return channel_id
+                    else:
+                        print(f"Error getting channel ID: {response.status} - {await response.text()}")
             return None
         except Exception as e:
             print(f"Error getting channel ID: {str(e)}")
             return None
 
-    def get_channel_clips(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_channel_clips(self, user_id: str) -> List[Dict[str, Any]]:
         """Get clips for a channel"""
-        access_token = self.token_manager.get_app_access_token()
+        access_token = await self.token_manager.get_app_access_token()
+        if not access_token:
+            print("Error: Could not retrieve app access token for get_channel_clips.")
+            return []
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
             'Authorization': f'Bearer {access_token}'
@@ -535,39 +299,40 @@ class TwitchAPI:
         max_video_time = int(self.config.get('MAX_VIDEO_TIME'))
 
         try:
-            while True:
-                params = {
-                    'broadcaster_id': user_id,
-                    'first': 100,
-                }
-                if cursor:
-                    params['after'] = cursor
+            async with aiohttp.ClientSession() as session:
+                while True:
+                    params = {
+                        'broadcaster_id': user_id,
+                        'first': 100,
+                    }
+                    if cursor:
+                        params['after'] = cursor
 
-                response = requests.get(
-                    'https://api.twitch.tv/helix/clips',
-                    headers=headers,
-                    params=params
-                )
-
-                if response.status_code != 200:
-                    break
-
-                data = response.json()
-                new_clips = [c for c in data.get('data', []) if c['duration'] <= max_video_time]
-                clips.extend(new_clips)
-
-                cursor = data.get('pagination', {}).get('cursor')
-                if not cursor or len(clips) >= 100:
-                    break
-
+                    async with session.get(
+                        'https://api.twitch.tv/helix/clips',
+                        headers=headers,
+                        params=params
+                    ) as response:
+                        if response.status != 200:
+                            print(f"Error getting clips: {response.status} - {await response.text()}")
+                            break
+                        data = await response.json()
+                        new_clips = [c for c in data.get('data', []) if c['duration'] <= max_video_time]
+                        clips.extend(new_clips)
+                        cursor = data.get('pagination', {}).get('cursor')
+                        if not cursor or len(clips) >= 100: # Avoid excessive pagination if already have 100 clips within time limit
+                            break
             return clips
         except Exception as e:
             print(f"Error getting clips: {str(e)}")
             return []
 
-    def get_channel_videos(self, user_id: str, video_type: str) -> List[Dict[str, Any]]:
+    async def get_channel_videos(self, user_id: str, video_type: str) -> List[Dict[str, Any]]:
         """Get videos for a channel"""
-        access_token = self.token_manager.get_app_access_token()
+        access_token = await self.token_manager.get_app_access_token()
+        if not access_token:
+            print("Error: Could not retrieve app access token for get_channel_videos.")
+            return []
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
             'Authorization': f'Bearer {access_token}'
@@ -578,31 +343,30 @@ class TwitchAPI:
         max_video_time = int(self.config.get('MAX_VIDEO_TIME'))
 
         try:
-            while True:
-                params = {
-                    'user_id': user_id,
-                    'first': 100,
-                    'type': video_type
-                }
-                if cursor:
-                    params['after'] = cursor
+            async with aiohttp.ClientSession() as session:
+                while True:
+                    params = {
+                        'user_id': user_id,
+                        'first': 100, # Max allowed by Twitch API is 100
+                        'type': video_type
+                    }
+                    if cursor:
+                        params['after'] = cursor
 
-                response = requests.get(
-                    'https://api.twitch.tv/helix/videos',
-                    headers=headers,
-                    params=params
-                )
-
-                if response.status_code != 200:
-                    break
-
-                data = response.json()
-                videos.extend(data.get('data', []))
-
-                cursor = data.get('pagination', {}).get('cursor')
-                if not cursor:
-                    break
-
+                    async with session.get(
+                        'https://api.twitch.tv/helix/videos',
+                        headers=headers,
+                        params=params
+                    ) as response:
+                        if response.status != 200:
+                            print(f"Error getting videos: {response.status} - {await response.text()}")
+                            break
+                        data = await response.json()
+                        videos.extend(data.get('data', []))
+                        cursor = data.get('pagination', {}).get('cursor')
+                        if not cursor: # No more pages
+                            break
+            
             filtered = []
             for v in videos:
                 try:
@@ -610,16 +374,15 @@ class TwitchAPI:
                     if duration <= max_video_time:
                         filtered.append(v)
                 except Exception as e:
-                    print(f"Error processing video: {str(e)}")
+                    print(f"Error processing video duration: {str(e)} for video {v.get('id')}")
                     continue
             return filtered
         except Exception as e:
             print(f"Error getting videos: {str(e)}")
             return []
 
-    def get_channel_content(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_channel_content(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all content (clips, videos, highlights) for a channel"""
-        # Check cache first
         current_time = time.time()
         if user_id in self._content_cache and self._cache_expiry.get(f"content_{user_id}", 0) > current_time:
             return self._content_cache[user_id]
@@ -630,41 +393,43 @@ class TwitchAPI:
 
         # Get clips
         if 'clip' in content_types:
-            clips = self.get_channel_clips(user_id)
-            for clip in clips:
+            clips_data = await self.get_channel_clips(user_id)
+            for clip in clips_data:
                 clip.update({
                     'content_type': 'clip',
                     'embed_url': f"https://clips.twitch.tv/embed?clip={clip['id']}&parent=twitch.tv&autoplay=true",
-                    'duration_seconds': clip['duration']
+                    'duration_seconds': clip['duration'] 
                 })
-            content.extend(clips)
+            content.extend(clips_data)
 
         # Get videos
         if 'video' in content_types:
-            videos = self.get_channel_videos(user_id, 'archive')
-            for video in videos:
+            videos_data = await self.get_channel_videos(user_id, 'archive')
+            for video in videos_data:
                 video_id = video['url'].split('/')[-1]
                 video.update({
                     'content_type': 'video',
                     'embed_url': f"https://player.twitch.tv/?video=v{video_id}&parent=twitch.tv&autoplay=true",
                     'duration_seconds': self._interval_string_to_seconds(video['duration'])
                 })
-            content.extend(videos)
+            content.extend(videos_data)
 
         # Get highlights
         if 'highlight' in content_types:
-            highlights = self.get_channel_videos(user_id, 'highlight')
-            for highlight in highlights:
+            highlights_data = await self.get_channel_videos(user_id, 'highlight')
+            for highlight in highlights_data:
                 video_id = highlight['url'].split('/')[-1]
                 highlight.update({
                     'content_type': 'highlight',
                     'embed_url': f"https://player.twitch.tv/?video=v{video_id}&parent=twitch.tv&autoplay=true",
                     'duration_seconds': self._interval_string_to_seconds(highlight['duration'])
                 })
-            content.extend(highlights)
-
+            content.extend(highlights_data)
+        
         # Filter by duration and update cache
-        filtered_content = [c for c in content if c['duration_seconds'] <= max_video_time]
+        # Ensure duration_seconds is present and is a number before filtering
+        filtered_content = [c for c in content if isinstance(c.get('duration_seconds'), (int, float)) and c['duration_seconds'] <= max_video_time]
+
         self._content_cache[user_id] = filtered_content
         self._cache_expiry[f"content_{user_id}"] = current_time + self.cache_duration
 
@@ -821,7 +586,7 @@ class OBSController:
 class TwitchBot(commands.Bot):
     """Twitch bot for handling chat commands"""
 
-    def __init__(self, config: Config, token_manager: TokenManager, 
+    def __init__(self, token: str, config: Config, token_manager: TokenManager, 
                  time_blocker: TimeBlocker, command_logger: CommandLogger):
         """Initialize Twitch bot"""
         self.config = config
@@ -830,7 +595,7 @@ class TwitchBot(commands.Bot):
         self.command_logger = command_logger
         self.restart_event = threading.Event()
 
-        token = self.token_manager.get_valid_token()
+        # Token is now passed as an argument
         super().__init__(
             token=token,
             client_id=self.config.get('TWITCH_CLIENT_ID'),
@@ -858,8 +623,11 @@ class TwitchBot(commands.Bot):
         """Handle errors"""
         if 'Authentication failed' in str(error):
             print("Invalid token, trying to refresh...")
-            if self.token_manager.refresh_tokens():
-                self.token = self.token_manager.get_valid_token()
+            # Ensure refresh_tokens is awaited
+            refreshed = await self.token_manager.refresh_tokens()
+            if refreshed:
+                # Ensure get_valid_token is awaited
+                self.token = await self.token_manager.get_valid_token()
                 await self.close()
                 self._connection._token = self.token
                 await self.connect()
@@ -912,29 +680,30 @@ class TwitchBot(commands.Bot):
             return
 
         try:
-            response = requests.post(
-                'https://localhost:5000/play',
-                json={'channel': channel_name},
-                timeout=35,
-                verify=False  # Skip SSL certificate verification for self-signed certificates
-            )
+            # Create a connector that skips SSL verification
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.post(
+                    'https://localhost:5000/play',
+                    json={'channel': channel_name},
+                    timeout=35
+                ) as response:
+                    if response.status == 200:
+                        self.command_logger.log_command(
+                            command='so',
+                            channel=channel_name.lower(),
+                            requester=ctx.author.name
+                        )
+                        response_data = await response.json()
+                        queue_position = response_data.get('queue_position', 1)
 
-            if response.status_code == 200:
-                self.command_logger.log_command(
-                    command='so',
-                    channel=channel_name.lower(),
-                    requester=ctx.author.name
-                )
-                response_data = response.json()
-                queue_position = response_data.get('queue_position', 1)
-
-                if queue_position > 1:
-                    await ctx.send(f"🎥 Conteúdo de {channel_name} adicionado à fila! Posição: {queue_position}")
-                else:
-                    await ctx.send(f"🎥 Reproduzindo conteúdo de {channel_name}!")
-            else:
-                error_msg = response.json().get('error', 'Erro desconhecido')
-                await ctx.send(f"❌ Erro: {error_msg}")
+                        if queue_position > 1:
+                            await ctx.send(f"🎥 Conteúdo de {channel_name} adicionado à fila! Posição: {queue_position}")
+                        else:
+                            await ctx.send(f"🎥 Reproduzindo conteúdo de {channel_name}!")
+                    else:
+                        error_msg = (await response.json()).get('error', 'Erro desconhecido')
+                        await ctx.send(f"❌ Erro: {error_msg}")
 
         except Exception as e:
             print(f"Error in request: {str(e)}")
@@ -943,19 +712,20 @@ class TwitchBot(commands.Bot):
     async def clean_queue_subcommand(self, ctx):
         """Handle the !so clean_queue subcommand"""
         try:
-            response = requests.post(
-                'https://localhost:5000/clean_queue',
-                timeout=10,
-                verify=False  # Skip SSL certificate verification for self-signed certificates
-            )
-
-            if response.status_code == 200:
-                response_data = response.json()
-                message = response_data.get('message', 'Fila limpa com sucesso!')
-                await ctx.send(f"🧹 {message}")
-            else:
-                error_msg = response.json().get('error', 'Erro desconhecido')
-                await ctx.send(f"❌ Erro ao limpar a fila: {error_msg}")
+            # Create a connector that skips SSL verification
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.post(
+                    'https://localhost:5000/clean_queue',
+                    timeout=10
+                ) as response:
+                    if response.status == 200:
+                        response_data = await response.json()
+                        message = response_data.get('message', 'Fila limpa com sucesso!')
+                        await ctx.send(f"🧹 {message}")
+                    else:
+                        error_msg = (await response.json()).get('error', 'Erro desconhecido')
+                        await ctx.send(f"❌ Erro ao limpar a fila: {error_msg}")
 
         except Exception as e:
             print(f"Error in clean_queue request: {str(e)}")
@@ -998,12 +768,12 @@ class FlaskApp:
             try:
                 response = requests.post(
                     'https://id.twitch.tv/oauth2/token',
-                    params={
+                    data={  # Changed from params to data
                         'client_id': self.config.get('TWITCH_CLIENT_ID'),
                         'client_secret': self.config.get('TWITCH_CLIENT_SECRET'),
                         'code': code,
                         'grant_type': 'authorization_code',
-                        'redirect_uri': "http://localhost:5000/auth/callback"
+                        'redirect_uri': "https://localhost:5000/auth/callback"
                     }
                 )
                 response.raise_for_status()
@@ -1015,10 +785,11 @@ class FlaskApp:
                     token_data['expires_in']
                 )
                 self.token_manager.auth_complete_event.set()
-                return "Authentication successful! You can close this window."
+                return render_template("auth-callback.html")
             except Exception as e:
                 print(f"Authentication error: {str(e)}")
-                return jsonify({'error': 'Authentication failed'}), 500
+                # You might want to render an error page here as well
+                return jsonify({'error': 'Authentication failed', 'details': str(e)}), 500
 
 
         @self.app.route('/play', methods=['POST'])
@@ -1117,7 +888,7 @@ class FlaskApp:
                     message = f"Error: {str(e)}"
                     message_type = 'error'
 
-            return render_template_string(CONFIG_TEMPLATE, 
+            return render_template("config.html", 
                                          config=self.config.config,
                                          message=message, 
                                          message_type=message_type)
@@ -1132,14 +903,21 @@ class FlaskApp:
 
                 self.is_playing = True
                 channel = self.command_queue.pop(0)
+            
+            # Create a new event loop for this thread if one doesn't exist
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
             try:
-                user_id = self.twitch_api.get_channel_id(channel)
+                user_id = asyncio.run(self.twitch_api.get_channel_id(channel))
                 if not user_id:
                     print(f"Channel not found: {channel}")
                     continue
 
-                content_list = self.twitch_api.get_channel_content(user_id)
+                content_list = asyncio.run(self.twitch_api.get_channel_content(user_id))
                 if not content_list:
                     print(f"No content found for channel: {channel}")
                     continue
@@ -1194,17 +972,45 @@ class Application:
                     self.restart_bot_event.clear()
                     print("Restarting bot with new configuration...")
 
-                tokens = self.token_manager.load_tokens()
-                if not tokens or tokens['expires_at'] <= time.time():
-                    if not self.token_manager.refresh_tokens():
-                        print("Authentication required...")
-                        self.token_manager.start_auth_flow()
-                        self.token_manager.auth_complete_event.wait()
+                # Setup event loop for async operations if not already running
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed(): # Check if the loop was closed previously
+                        raise RuntimeError
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
 
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                bot = TwitchBot(self.config, self.token_manager, self.time_blocker, self.command_logger)
+                # Perform async token checks and refresh if necessary
+                valid_token = loop.run_until_complete(self.token_manager.get_valid_token())
+                if not valid_token:
+                    print("Authentication required or token refresh failed...")
+                    # Start auth flow (synchronous) and wait for completion
+                    self.token_manager.start_auth_flow()
+                    self.token_manager.auth_complete_event.wait() # This blocks the bot thread until auth is done
+                    # After auth, try to get the token again
+                    valid_token = loop.run_until_complete(self.token_manager.get_valid_token())
+                    if not valid_token:
+                        print("Failed to obtain a valid token after authentication. Bot cannot start.")
+                        # Potentially exit or wait before retrying
+                        time.sleep(10) # Wait before retrying the loop
+                        continue # Restart the bot loop
+
+                # If loop was created here, run the bot in it.
+                # If loop was pre-existing, tasks will be scheduled on it.
+                # Pass the fetched valid_token to the TwitchBot constructor
+                bot = TwitchBot(token=valid_token, 
+                                config=self.config, 
+                                token_manager=self.token_manager, 
+                                time_blocker=self.time_blocker, 
+                                command_logger=self.command_logger)
                 bot.restart_event = self.restart_bot_event
+                
+                # The token is set during super().__init__ now.
+                # If _connection needs explicit update after init, it would be:
+                # bot._connection._token = valid_token 
+                # However, twitchio's commands.Bot should handle this if token is passed to __init__.
+
                 loop.run_until_complete(bot.start())
 
             except KeyboardInterrupt:

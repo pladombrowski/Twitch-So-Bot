@@ -1,0 +1,174 @@
+:root {
+    --bg: #282a36;
+    --fg: #f8f8f2;
+    --purple: #bd93f9;
+    --pink: #ff79c6;
+    --cyan: #8be9fd;
+    --green: #50fa7b;
+    --orange: #ffb86c;
+    --comment: #6272a4; /* Added for consistency with Dracula */
+    --current-line: #44475a; /* Added for consistency with Dracula */
+    --selection: #44475a; /* Added for consistency with Dracula */
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    padding: 20px;
+}
+
+.container {
+    max-width: 800px;
+    margin: 20px auto; /* Added some top/bottom margin */
+    background: var(--current-line); /* Slightly darker background for the container */
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); /* Enhanced shadow */
+}
+
+h1 {
+    color: var(--purple);
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 2.5em;
+}
+
+.form-section {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: rgba(0,0,0,0.1); /* Darker, more subtle section background */
+    border: 1px solid var(--selection); /* Border for sections */
+    border-radius: 8px;
+}
+
+h2 {
+    color: var(--cyan);
+    margin-bottom: 20px; /* Increased margin */
+    font-size: 1.6em; /* Slightly larger */
+    border-bottom: 1px solid var(--selection);
+    padding-bottom: 10px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--green);
+    font-weight: 500;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"] /* Added password for obs_password if it's ever changed */
+{
+    width: 100%;
+    padding: 12px;
+    background: var(--bg); /* Darker input background */
+    border: 1px solid var(--comment); /* Subtler border */
+    border-radius: 5px;
+    color: var(--fg);
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus {
+    outline: none;
+    border-color: var(--cyan);
+    background: var(--current-line); /* Slightly lighter on focus */
+}
+
+/* Styling for checkboxes to fit Dracula theme */
+.checkbox-group label {
+    color: var(--fg); /* Standard text color */
+    font-weight: normal;
+    display: flex; /* Align checkbox and text */
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+input[type="checkbox"] {
+    margin-right: 10px;
+    accent-color: var(--purple); /* Use purple for the check mark */
+    width: 18px; /* Custom size */
+    height: 18px; /* Custom size */
+    background-color: var(--bg); /* Background of the checkbox */
+    border: 1px solid var(--comment);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+input[type="checkbox"]:checked {
+    background-color: var(--purple);
+}
+
+
+button[type="submit"] {
+    background: var(--purple);
+    color: var(--bg); /* Ensure contrast for text on button */
+    border: none;
+    padding: 15px 30px;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease; /* Smooth transition */
+    display: block;
+    width: 100%;
+}
+
+button[type="submit"]:hover {
+    background: var(--pink); /* Change to pink on hover, a common Dracula accent */
+    color: var(--bg);
+}
+
+.alert {
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.success {
+    background: rgba(80, 250, 123, 0.2); /* Green from Dracula */
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.error {
+    background: rgba(255, 121, 198, 0.2); /* Pink from Dracula */
+    border: 1px solid var(--pink);
+    color: var(--pink);
+}
+
+/* Link styling for auth-callback page */
+a {
+    color: var(--cyan);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--pink);
+    text-decoration: underline;
+}
+
+/* Small text styling (e.g., descriptions under form fields) */
+small {
+    color: var(--comment);
+    display: block;
+    margin-top: 5px;
+}
