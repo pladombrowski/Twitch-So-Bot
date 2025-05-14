@@ -59,7 +59,19 @@ class Config:
                     config['BLOCKED_PERIOD'] = '08-23'
                 return config
         except FileNotFoundError:
+            # If file not found, create it with default config and return default config
+            self.save_default()
             return self.DEFAULT_CONFIG.copy()
+
+    def save_default(self) -> None:
+        """Save default configuration to file"""
+        with open(self.config_path, "w") as file:
+            yaml.dump(self.DEFAULT_CONFIG, file)
+
+    def save(self) -> None:
+        """Save current configuration to file"""
+        with open(self.config_path, "w") as file:
+            yaml.dump(self.config, file)
 
     def save(self) -> None:
         """Save configuration to file"""
@@ -880,12 +892,12 @@ class FlaskApp:
 
                     self.config.update(new_config)
 
-                    # Signal restart
-                    app_instance.restart_bot_event.set()
 
-                    message = "Settings saved and application restarted!"
+                    # Signal application to proceed (starts the bot if it wasn't running)
+                    app_instance.app_should_restart.set()
+
+                    message = "Settings saved and application will start!"
                 except Exception as e:
-                    message = f"Error: {str(e)}"
                     message_type = 'error'
 
             return render_template("config.html", 
@@ -1033,25 +1045,39 @@ class Application:
         flask_thread.start()
         time.sleep(2)
 
-        # Show configuration message if needed
+        # Check if config is still default and wait for update if necessary
         if self.config.get('TWITCH_CLIENT_ID') == 'your_client_id':
-            print("\nAccess http://localhost:5000/config or https://localhost:5000/config to configure\n")
+            print("\nConfiguration is incomplete. Please access http://localhost:5000/config or https://localhost:5000/config to configure the application.\n")
+            # Open config page in browser
+            try:
+                webbrowser.open("https://localhost:5000/config") # Prefer HTTPS
+            except Exception as e:
+                print(f"Could not open browser automatically: {str(e)}")
+
+
+            # Wait for the configuration to be updated and the restart signal
+            print("Waiting for configuration update...")
+            # Use a polling loop instead of blocking wait
+            while not self.app_should_restart.is_set():
+                time.sleep(0.5) # Poll every 0.5 seconds
+
+            self.app_should_restart.clear() # Clear the event for future restarts
+            print("Configuration updated. Proceeding to start bot...")
+
+        else:
+            print("\nConfiguration loaded successfully. Starting bot...\n")
 
         # Start bot in a separate thread
         bot_thread = threading.Thread(target=self.run_bot)
         bot_thread.daemon = True
         bot_thread.start()
-
-        # Main loop to handle application restart
+        # Keep the main thread alive
         try:
             while True:
-                time.sleep(1)
-                if self.app_should_restart.is_set():
-                    print("Restarting complete application...")
-                    self.restart_bot_event.set()
-                    self.app_should_restart.clear()
+                time.sleep(1) # Keep the main thread alive
         except KeyboardInterrupt:
-            print("Shutting down...")
+            print("Shutting down application...")
+
 
 
 # Global instance for Flask routes to access
