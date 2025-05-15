@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
 import urllib3
 import aiohttp
+import os # Import os to list language files
 
 # Disable warnings for insecure requests (necessary for self-signed certificates)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -29,7 +30,9 @@ from twitchio.ext import commands
 class Config:
     """Class to manage application configuration"""
 
+
     DEFAULT_CONFIG = {
+        'LANGUAGE': 'pt_br',
         'TWITCH_CLIENT_ID': 'your_client_id',
         'TWITCH_CLIENT_SECRET': 'your_client_secret',
         'OBS_HOST': 'localhost',
@@ -48,6 +51,7 @@ class Config:
         """Initialize configuration from file or defaults"""
         self.config_path = config_path
         self.config = self.load()
+        self.messages = self._load_language_messages() # Load language messages
 
     def load(self) -> Dict[str, Any]:
         """Load configuration from file or use defaults"""
@@ -57,6 +61,9 @@ class Config:
                 # Set default if not exists
                 if 'BLOCKED_PERIOD' not in config:
                     config['BLOCKED_PERIOD'] = '08-23'
+                # Ensure language is set if not present (for existing config files)
+                if 'LANGUAGE' not in config:
+                     config['LANGUAGE'] = self.DEFAULT_CONFIG['LANGUAGE']
                 return config
         except FileNotFoundError:
             # If file not found, create it with default config and return default config
@@ -73,10 +80,44 @@ class Config:
         with open(self.config_path, "w") as file:
             yaml.dump(self.config, file)
 
-    def save(self) -> None:
-        """Save configuration to file"""
-        with open(self.config_path, "w") as file:
-            yaml.dump(self.config, file)
+    def _load_language_messages(self) -> Dict[str, Any]:
+        """Load language messages from the appropriate YAML file"""
+        lang_code = self.get('LANGUAGE', 'en')
+        lang_file = f"lang_{lang_code}.yaml"
+        try:
+            with open(lang_file, "r", encoding="utf-8") as file:
+                return yaml.safe_load(file)
+        except FileNotFoundError:
+            print(self.get_message('config.warning_lang_file_not_found', lang_file=lang_file))
+            try:
+                with open("lang_en.yaml", "r", encoding="utf-8") as file:
+                    return yaml.safe_load(file)
+            except FileNotFoundError:
+                print(self.get_message('config.error_en_lang_file_missing'))
+                return {}
+        except Exception as e:
+            print(f"Error loading language file {lang_file}: {str(e)}") # Keep f-string for error details
+            return {}
+
+    def get_message(self, key: str, **kwargs) -> str:
+        """Get a localized message string by key, with optional formatting"""
+        keys = key.split('.')
+        message = self.messages
+        for k in keys:
+            message = message.get(k)
+            if message is None:
+                print(f"Warning: Message key '{key}' not found in language file.")
+                return key # Return the key itself if not found
+        
+        if isinstance(message, str):
+            try:
+                return message.format(**kwargs)
+            except KeyError as e:
+                print(f"Warning: Missing format key {e} for message '{key}'")
+                return message # Return message without formatting if keys are missing
+        else:
+             print(f"Warning: Message for key '{key}' is not a string.")
+             return str(message) # Return string representation if not a string
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value with optional default"""
@@ -192,7 +233,7 @@ class TokenManager:
             'scope': 'chat:read chat:edit'
         }
         auth_url = requests.Request('GET', 'https://id.twitch.tv/oauth2/authorize', params=params).prepare().url
-        print(f"Please authorize the application: {auth_url}")
+        print(self.config.get_message('auth.please_authorize', auth_url=auth_url))
         webbrowser.open(auth_url)
 
 
@@ -267,7 +308,7 @@ class TwitchAPI:
 
         access_token = await self.token_manager.get_app_access_token()
         if not access_token:
-            print("Error: Could not retrieve app access token for get_channel_id.")
+            print(self.config.get_message('errors.app_access_token_error', api_call='get_channel_id'))
             return None
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
@@ -299,7 +340,7 @@ class TwitchAPI:
         """Get clips for a channel"""
         access_token = await self.token_manager.get_app_access_token()
         if not access_token:
-            print("Error: Could not retrieve app access token for get_channel_clips.")
+            print(self.config.get_message('errors.app_access_token_error', api_call='get_channel_clips'))
             return []
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
@@ -343,7 +384,7 @@ class TwitchAPI:
         """Get videos for a channel"""
         access_token = await self.token_manager.get_app_access_token()
         if not access_token:
-            print("Error: Could not retrieve app access token for get_channel_videos.")
+            print(self.config.get_message('errors.app_access_token_error', api_call='get_channel_videos'))
             return []
         headers = {
             'Client-ID': self.config.get('TWITCH_CLIENT_ID'),
@@ -564,9 +605,9 @@ class OBSController:
     def remove_browser_source(self, time_to_sleep: int) -> None:
         """Remove browser source after specified time"""
         def delayed_remove():
-            print(f"Removing video in {time_to_sleep} seconds...")
+            print(self.config.get_message('bot.removing_video_in', seconds=time_to_sleep))
             time.sleep(time_to_sleep + 1)
-            print("Removing video!")
+            print(self.config.get_message('bot.removing_video'))
 
             ws = obsws(
                 self.config.get('OBS_HOST'), 
@@ -629,12 +670,12 @@ class TwitchBot(commands.Bot):
 
     async def event_ready(self):
         """Called when the bot is ready"""
-        print(f'Bot connected as {self.nick}')
+        print(self.config.get_message('bot.connected', nick=self.nick))
 
     async def event_error(self, error, data=None):
         """Handle errors"""
         if 'Authentication failed' in str(error):
-            print("Invalid token, trying to refresh...")
+            print(self.config.get_message('bot.invalid_token_refreshing'))
             # Ensure refresh_tokens is awaited
             refreshed = await self.token_manager.refresh_tokens()
             if refreshed:
@@ -644,7 +685,7 @@ class TwitchBot(commands.Bot):
                 self._connection._token = self.token
                 await self.connect()
             else:
-                print("Token refresh failed. Authentication required.")
+                print(self.config.get_message('bot.token_refresh_failed'))
                 self.token_manager.auth_complete_event.clear()
                 self.token_manager.start_auth_flow()
 
@@ -668,7 +709,7 @@ class TwitchBot(commands.Bot):
     async def shoutout_command(self, ctx, *args):
         """Handle the !so command and its subcommands"""
         if not self.is_user_authorized(ctx):
-            await ctx.send("❌ Você não tem permissão para usar este comando!")
+            await ctx.send(self.config.get_message('bot.permission_denied'))
             return
 
         # Check for subcommands
@@ -680,15 +721,15 @@ class TwitchBot(commands.Bot):
         channel_name = args[0] if args else None
 
         if self.time_blocker.is_command_blocked():
-            await ctx.send("⏰ O !so está bloqueado neste horário!")
+            await ctx.send(self.config.get_message('bot.command_blocked'))
             return
 
         if not channel_name:
-            await ctx.send("Formato correto: !so <nome_do_canal> ou !so clean_queue")
+            await ctx.send(self.config.get_message('bot.invalid_command_format'))
             return
 
         if not re.match(r'^[a-zA-Z0-9_]{4,25}$', channel_name):
-            await ctx.send("Nome de canal inválido")
+            await ctx.send(self.config.get_message('bot.invalid_channel_name'))
             return
 
         try:
@@ -710,16 +751,16 @@ class TwitchBot(commands.Bot):
                         queue_position = response_data.get('queue_position', 1)
 
                         if queue_position > 1:
-                            await ctx.send(f"🎥 Conteúdo de {channel_name} adicionado à fila! Posição: {queue_position}")
+                            await ctx.send(self.config.get_message('bot.add_to_queue', channel_name=channel_name, queue_position=queue_position))
                         else:
-                            await ctx.send(f"🎥 Reproduzindo conteúdo de {channel_name}!")
+                            await ctx.send(self.config.get_message('bot.playing_now', channel_name=channel_name))
                     else:
                         error_msg = (await response.json()).get('error', 'Erro desconhecido')
-                        await ctx.send(f"❌ Erro: {error_msg}")
+                        await ctx.send(self.config.get_message('bot.play_error', error_msg=error_msg))
 
         except Exception as e:
-            print(f"Error in request: {str(e)}")
-            await ctx.send("🔧 Erro interno ao processar o pedido")
+            print(f"Error in request: {str(e)}") # Keep f-string for error details
+            await ctx.send(self.config.get_message('bot.internal_error'))
 
     async def clean_queue_subcommand(self, ctx):
         """Handle the !so clean_queue subcommand"""
@@ -733,15 +774,16 @@ class TwitchBot(commands.Bot):
                 ) as response:
                     if response.status == 200:
                         response_data = await response.json()
-                        message = response_data.get('message', 'Fila limpa com sucesso!')
-                        await ctx.send(f"🧹 {message}")
+                        count = response_data.get('count', 0) # Assuming API returns count
+                        message_to_send = self.config.get_message('bot.queue_cleared', count=count)
+                        await ctx.send(message_to_send)
                     else:
                         error_msg = (await response.json()).get('error', 'Erro desconhecido')
-                        await ctx.send(f"❌ Erro ao limpar a fila: {error_msg}")
+                        await ctx.send(self.config.get_message('bot.clear_queue_error', error_msg=error_msg))
 
         except Exception as e:
-            print(f"Error in clean_queue request: {str(e)}")
-            await ctx.send("🔧 Erro interno ao limpar a fila")
+            print(f"Error in clean_queue request: {str(e)}") # Keep f-string for error details
+            await ctx.send(self.config.get_message('bot.internal_error_cleaning_queue'))
 
 
 class FlaskApp:
@@ -797,11 +839,29 @@ class FlaskApp:
                     token_data['expires_in']
                 )
                 self.token_manager.auth_complete_event.set()
-                return render_template("auth-callback.html")
+                # Pass config object and localized message key/details to the template
+                return render_template("auth-callback.html",
+                                       config=self.config, # Pass the Config object
+                                       main_message_key='auth.callback_success',
+                                       is_error=False)
             except Exception as e:
-                print(f"Authentication error: {str(e)}")
-                # You might want to render an error page here as well
-                return jsonify({'error': 'Authentication failed', 'details': str(e)}), 500
+                print(f"Authentication error: {str(e)}") # Keep f-string for error details
+                # Return localized error message in JSON
+                error_details = str(e)
+                # If we were to render template on error:
+                # return render_template("auth-callback.html",
+                #                        config=self.config,
+                #                        main_message_key='auth.callback_error',
+                #                        main_message_args={'details': error_details},
+                #                        is_error=True)
+                error_message_key = 'errors.authentication_failed'
+                error_message_details_key = 'auth.callback_error'
+                
+                # Fetch localized messages
+                main_error = self.config.get_message(error_message_key)
+                detailed_error = self.config.get_message(error_message_details_key, details=error_details)
+
+                return jsonify({'error': main_error, 'details': detailed_error}), 500
 
 
         @self.app.route('/play', methods=['POST'])
@@ -811,7 +871,7 @@ class FlaskApp:
                 data = request.json
                 channel = data.get('channel')
                 if not channel:
-                    return jsonify({'error': 'Channel name required'}), 400
+                    return jsonify({'error': self.config.get_message('errors.channel_name_required')}), 400
 
                 # Add the channel to the queue
                 with self.queue_lock:
@@ -825,15 +885,24 @@ class FlaskApp:
                         )
                         self.queue_processor_thread.start()
 
+                # Use localized messages for response
+                queue_position = len(self.command_queue)
+                if queue_position > 1:
+                    message = self.config.get_message('bot.add_to_queue', channel_name=channel, queue_position=queue_position)
+                else:
+                    message = self.config.get_message('bot.playing_now', channel_name=channel)
+
                 return jsonify({
                     'status': 'success',
-                    'message': f'Added {channel} to the queue',
-                    'queue_position': len(self.command_queue)
+                    'message': message,
+                    'queue_position': queue_position
                 }), 200
 
             except Exception as e:
-                print(f"Complete error: {traceback.format_exc()}")
-                return jsonify({'error': str(e)}), 500
+                print(f"Complete error: {traceback.format_exc()}") # Keep f-string for error details
+                # Use localized message for error
+                error_message = self.config.get_message('bot.internal_error')
+                return jsonify({'error': error_message}), 500
 
         @self.app.route('/clean_queue', methods=['POST'])
         def clean_queue():
@@ -843,14 +912,19 @@ class FlaskApp:
                     queue_size = len(self.command_queue)
                     self.command_queue.clear()
 
+                # Use localized message for response
+                message = self.config.get_message('bot.queue_cleared', count=queue_size)
+
                 return jsonify({
                     'status': 'success',
-                    'message': f'Queue cleared ({queue_size} items removed)'
+                    'message': message
                 }), 200
 
             except Exception as e:
-                print(f"Error cleaning queue: {str(e)}")
-                return jsonify({'error': str(e)}), 500
+                print(f"Error cleaning queue: {str(e)}") # Keep f-string for error details
+                # Use localized message for error
+                error_msg = self.config.get_message('bot.clear_queue_error', error_msg=str(e)) # Assuming error_msg placeholder in lang file
+                return jsonify({'error': error_msg}), 500
 
         @self.app.route('/config', methods=['GET', 'POST'])
         def config_editor():
@@ -887,22 +961,30 @@ class FlaskApp:
                         'CONTENT_TYPES': request.form.getlist('CONTENT_TYPES'),
                         'LOG_FILE_PATH': request.form['LOG_FILE_PATH'],
                         'BLOCKED_PERIOD': f"{block_start}-{block_end}",
-                        'MAX_VIDEO_TIME': request.form['MAX_VIDEO_TIME']
+                        'MAX_VIDEO_TIME': request.form['MAX_VIDEO_TIME'],
+                        'LANGUAGE': request.form['LANGUAGE']
                     }
 
                     self.config.update(new_config)
 
 
                     # Signal application to proceed (starts the bot if it wasn't running)
+                    self.config.save() # Save the updated config
+
+                    # Signal application to proceed (starts the bot if it wasn't running)
                     app_instance.app_should_restart.set()
 
-                    message = "Settings saved and application will start!"
+                    message = self.config.get_message('config.settings_saved')
+                except ValueError as e: # Specific error for config validation
+                    message = str(e) # Error messages from validation are already user-friendly
+                    message_type = 'error'
                 except Exception as e:
+                    message = self.config.get_message('config.error_saving', error=str(e))
                     message_type = 'error'
 
-            return render_template("config.html", 
-                                         config=self.config.config,
-                                         message=message, 
+            return render_template("config.html",
+                                         config=self.config, # Pass the Config object
+                                         message=message,
                                          message_type=message_type)
 
     def process_queue(self):
@@ -926,12 +1008,12 @@ class FlaskApp:
             try:
                 user_id = asyncio.run(self.twitch_api.get_channel_id(channel))
                 if not user_id:
-                    print(f"Channel not found: {channel}")
+                    print(self.config.get_message('bot.channel_not_found', channel=channel))
                     continue
 
                 content_list = asyncio.run(self.twitch_api.get_channel_content(user_id))
                 if not content_list:
-                    print(f"No content found for channel: {channel}")
+                    print(self.config.get_message('bot.no_content_found', channel=channel))
                     continue
 
                 selected = random.choice(content_list)
@@ -947,7 +1029,7 @@ class FlaskApp:
                 time.sleep(self.selected_video_duration + 2)
 
             except Exception as e:
-                print(f"Error processing queue item: {str(e)}")
+                print(f"Error processing queue item: {str(e)}") # Keep f-string for error details
                 traceback.print_exc()
 
     def run(self, host='0.0.0.0', port=5000):
@@ -982,7 +1064,7 @@ class Application:
             try:
                 if self.restart_bot_event.is_set():
                     self.restart_bot_event.clear()
-                    print("Restarting bot with new configuration...")
+                    print(self.config.get_message('app.restarting_bot'))
 
                 # Setup event loop for async operations if not already running
                 try:
@@ -996,14 +1078,14 @@ class Application:
                 # Perform async token checks and refresh if necessary
                 valid_token = loop.run_until_complete(self.token_manager.get_valid_token())
                 if not valid_token:
-                    print("Authentication required or token refresh failed...")
+                    print(self.config.get_message('app.auth_required_or_refresh_failed'))
                     # Start auth flow (synchronous) and wait for completion
                     self.token_manager.start_auth_flow()
                     self.token_manager.auth_complete_event.wait() # This blocks the bot thread until auth is done
                     # After auth, try to get the token again
                     valid_token = loop.run_until_complete(self.token_manager.get_valid_token())
                     if not valid_token:
-                        print("Failed to obtain a valid token after authentication. Bot cannot start.")
+                        print(self.config.get_message('bot.auth_failed_bot_start'))
                         # Potentially exit or wait before retrying
                         time.sleep(10) # Wait before retrying the loop
                         continue # Restart the bot loop
@@ -1028,7 +1110,7 @@ class Application:
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f"Error: {str(e)}")
+                print(f"Error: {str(e)}") # Keep f-string for error details
                 time.sleep(5)
             finally:
                 if loop and loop.is_running():
@@ -1045,27 +1127,28 @@ class Application:
         flask_thread.start()
         time.sleep(2)
 
+
         # Check if config is still default and wait for update if necessary
         if self.config.get('TWITCH_CLIENT_ID') == 'your_client_id':
-            print("\nConfiguration is incomplete. Please access http://localhost:5000/config or https://localhost:5000/config to configure the application.\n")
+            print(f"\n{self.config.get_message('config.incomplete')}\n")
             # Open config page in browser
             try:
                 webbrowser.open("https://localhost:5000/config") # Prefer HTTPS
             except Exception as e:
-                print(f"Could not open browser automatically: {str(e)}")
+                print(f"Could not open browser automatically: {str(e)}") # Keep f-string for error details
 
 
             # Wait for the configuration to be updated and the restart signal
-            print("Waiting for configuration update...")
+            print(self.config.get_message('config.waiting'))
             # Use a polling loop instead of blocking wait
             while not self.app_should_restart.is_set():
                 time.sleep(0.5) # Poll every 0.5 seconds
 
             self.app_should_restart.clear() # Clear the event for future restarts
-            print("Configuration updated. Proceeding to start bot...")
+            print(self.config.get_message('config.updated'))
 
         else:
-            print("\nConfiguration loaded successfully. Starting bot...\n")
+            print(f"\n{self.config.get_message('config.loaded_success')}\n")
 
         # Start bot in a separate thread
         bot_thread = threading.Thread(target=self.run_bot)
@@ -1076,7 +1159,7 @@ class Application:
             while True:
                 time.sleep(1) # Keep the main thread alive
         except KeyboardInterrupt:
-            print("Shutting down application...")
+            print(self.config.get_message('app.shutting_down'))
 
 
 

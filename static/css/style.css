@@ -6,7 +6,7 @@
     --cyan: #8be9fd;
     --green: #50fa7b;
     --orange: #ffb86c;
-    --comment: #6272a4; /* Added for consistency with Dracula */
+    --comment: #b3c6ff; /* Added for consistency with Dracula */
     --current-line: #44475a; /* Added for consistency with Dracula */
     --selection: #44475a; /* Added for consistency with Dracula */
 }
@@ -112,6 +112,17 @@ input[type="checkbox"] {
 
 input[type="checkbox"]:checked {
     background-color: var(--purple);
+}
+
+select {
+    width: 100%;
+    padding: 12px;
+    background: var(--bg);
+    border: 1px solid var(--comment);
+    border-radius: 5px;
+    color: var(--fg);
+    font-size: 16px;
+    transition: all 0.3s ease;
 }
 
 

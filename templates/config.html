@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuração do Bot Twitch</title>
+    <title>{{ config.get_message('config.title') }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Configuração do Bot Twitch</h1>
+        <h1>{{ config.get_message('config.title') }}</h1>
 
         {% if message %}
         <div class="alert {{ message_type }}">{{ message }}</div>
@@ -16,114 +16,128 @@
 
         <form method="post">
             <div class="form-section">
-                <h2>Configurações da Twitch</h2>
+                <h2>{{ config.get_message('config.twitch_settings_header') }}</h2>
 
                 <div class="form-group">
-                    <label for="twitch_username">Nome de Usuário Twitch:</label>
-                    <input type="text" id="twitch_username" name="TWITCH_USERNAME" 
-                           value="{{ config.TWITCH_USERNAME }}" required>
+                    <label for="twitch_username">{{ config.get_message('config.twitch_username_label') }}</label>
+                    <input type="text" id="twitch_username" name="TWITCH_USERNAME"
+                           value="{{ config.get('TWITCH_USERNAME', '') }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="client_id">Client ID:</label>
-                    <input type="text" id="client_id" name="TWITCH_CLIENT_ID" 
-                           value="{{ config.TWITCH_CLIENT_ID }}" required>
+                    <label for="client_id">{{ config.get_message('config.client_id_label') }}</label>
+                    <input type="text" id="client_id" name="TWITCH_CLIENT_ID"
+                           value="{{ config.get('TWITCH_CLIENT_ID', '') }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="client_secret">Client Secret:</label>
-                    <input type="text" id="client_secret" name="TWITCH_CLIENT_SECRET" 
-                           value="{{ config.TWITCH_CLIENT_SECRET }}" required>
+                    <label for="client_secret">{{ config.get_message('config.client_secret_label') }}</label>
+                    <input type="text" id="client_secret" name="TWITCH_CLIENT_SECRET"
+                           value="{{ config.get('TWITCH_CLIENT_SECRET', '') }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="max_video_time">Tempo máximo dos vídeos em segundos:</label>
-                    <input type="number" id="max_video_time" name="MAX_VIDEO_TIME" 
-                           value="{{ config.MAX_VIDEO_TIME }}" required>
+                    <label for="max_video_time">{{ config.get_message('config.max_video_time_label') }}</label>
+                    <input type="number" id="max_video_time" name="MAX_VIDEO_TIME"
+                           value="{{ config.get('MAX_VIDEO_TIME', '') }}" required>
                 </div>
             </div>
 
             <div class="form-section">
-                <h2>Restrição Horária</h2>
+                <h2>{{ config.get_message('config.hourly_restriction_header') }}</h2>
                 <div class="form-group">
-                    <label>Bloquear comandos entre:</label>
+                    <label>{{ config.get_message('config.form_blocked_period_label') }}</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="number" id="block_start" name="BLOCK_START" 
-                            value="{{ config.BLOCKED_PERIOD.split('-')[0] }}" 
+                        <input type="number" id="block_start" name="BLOCK_START"
+                            value="{{ config.get('BLOCKED_PERIOD', '').split('-')[0] }}"
                             min="0" max="23" step="1" style="width: 80px;">
                         <span>e</span>
-                        <input type="number" id="block_end" name="BLOCK_END" 
-                            value="{{ config.BLOCKED_PERIOD.split('-')[1] }}" 
+                        <input type="number" id="block_end" name="BLOCK_END"
+                            value="{{ config.get('BLOCKED_PERIOD', '').split('-')[1] }}"
                             min="0" max="23" step="1" style="width: 80px;">
-                        <span>horas (0-23)</span>
+                        <span>{{ config.get_message('config.block_hours_info') }}</span>
                     </div>
                 </div>
-                <small>Os comandos serão bloqueados durante este período</small>
+                <small>{{ config.get_message('config.block_period_help_text') }}</small>
             </div>
 
             <div class="form-section">
-                <h2>Configurações do OBS</h2>
+                <h2>{{ config.get_message('config.obs_settings_header') }}</h2>
 
                 <div class="form-group">
-                    <label for="obs_host">Host OBS:</label>
-                    <input type="text" id="obs_host" name="OBS_HOST" 
-                           value="{{ config.OBS_HOST }}" required>
+                    <label for="obs_host">{{ config.get_message('config.obs_host_label') }}</label>
+                    <input type="text" id="obs_host" name="OBS_HOST"
+                           value="{{ config.get('OBS_HOST', '') }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="obs_port">Porta OBS:</label>
-                    <input type="number" id="obs_port" name="OBS_PORT" 
-                           value="{{ config.OBS_PORT }}" required>
+                    <label for="obs_port">{{ config.get_message('config.obs_port_label') }}</label>
+                    <input type="number" id="obs_port" name="OBS_PORT"
+                           value="{{ config.get('OBS_PORT', '') }}" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="obs_password">Senha do OBS WebSocket:</label>
-                    <input type="text" id="obs_password" name="OBS_PASSWORD" 
-                           value="{{ config.OBS_PASSWORD }}" required>
+                    <label for="obs_password">{{ config.get_message('config.obs_password_label') }}</label>
+                    <input type="text" id="obs_password" name="OBS_PASSWORD"
+                           value="{{ config.get('OBS_PASSWORD', '') }}" required>
                 </div>
             </div>
             <div class="form-section">
-                <h2>Usuários Autorizados</h2>
+                <h2>{{ config.get_message('config.authorized_users_header') }}</h2>
                 <div class="form-group">
-                    <label for="authorized_users">Nomes de usuário permitidos (separados por vírgula):</label>
-                        <input type="text" id="authorized_users" name="AUTHORIZED_USERS" 
-                            value="{{ ','.join(config.AUTHORIZED_USERS) }}" 
+                    <label for="authorized_users">{{ config.get_message('config.form_authorized_users_label') }}</label>
+                        <input type="text" id="authorized_users" name="AUTHORIZED_USERS"
+                            value="{{ ','.join(config.get('AUTHORIZED_USERS', '')) }}"
                             placeholder="Ex: seu_usuário,moderador1,moderador2">
                 </div>
-                <small>Adicione os nomes exatos dos usuários do Twitch que podem usar comandos</small>
+                <small>{{ config.get_message('config.authorized_users_help_text') }}</small>
             </div>
             <div class="form-section">
-                <h2>Configurações de Conteúdo</h2>
+                <h2>{{ config.get_message('config.content_settings_header') }}</h2>
                 <div class="form-group">
-                    <label>Tipos de conteúdo permitidos:</label>
+                    <label>{{ config.get_message('config.form_allowed_content_types_label') }}</label>
                     <div class="checkbox-group">
                         <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="clip" {{ 'checked' if 'clip' in config.CONTENT_TYPES else '' }}>
-                            Clip's
+                            <input type="checkbox" name="CONTENT_TYPES" value="clip" {{ 'checked' if 'clip' in config.get('CONTENT_TYPES', '') else '' }}>
+                            {{ config.get_message('config.content_type_clips') }}
                         </label>
                         <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="video" {{ 'checked' if 'video' in config.CONTENT_TYPES else '' }}>
-                            Vídeos
+                            <input type="checkbox" name="CONTENT_TYPES" value="video" {{ 'checked' if 'video' in config.get('CONTENT_TYPES', '') else '' }}>
+                            {{ config.get_message('config.content_type_videos') }}
                         </label>
                         <label>
-                            <input type="checkbox" name="CONTENT_TYPES" value="highlight" {{ 'checked' if 'highlight' in config.CONTENT_TYPES else '' }}>
-                            Highlights
+                            <input type="checkbox" name="CONTENT_TYPES" value="highlight" {{ 'checked' if 'highlight' in config.get('CONTENT_TYPES', '') else '' }}>
+                            {{ config.get_message('config.content_type_highlights') }}
                         </label>
                     </div>
                 </div>
             </div>
             <div class="form-section">
-                <h2>Configurações de Log</h2>
+                <h2>{{ config.get_message('config.log_settings_header') }}</h2>
 
                 <div class="form-group">
-                    <label for="log_path">Caminho do arquivo de log:</label>
-                    <input type="text" id="log_path" name="LOG_FILE_PATH" 
-                        value="{{ config.LOG_FILE_PATH }}" 
+                    <label for="log_path">{{ config.get_message('config.log_file_path_label') }}</label>
+                    <input type="text" id="log_path" name="LOG_FILE_PATH"
+                        value="{{ config.get('LOG_FILE_PATH', '') }}"
                         placeholder="Ex: command_log.csv">
                 </div>
-                <small>Arquivo CSV com histórico de comandos executados</small>
+                <small>{{ config.get_message('config.log_file_path_help_text') }}</small>
             </div>
-            <button type="submit">Salvar Configurações</button>
+
+            <div class="form-section">
+                <h2>{{ config.get_message('config.language_settings_header') }}</h2>
+
+                <div class="form-group">
+                    <label for="log_path">{{ config.get_message('config.language_settings_label') }}</label>
+                    <select name="LANGUAGE">
+                        <option value="en" {{ 'selected' if config.get('LANGUAGE', '') == 'en' else '' }}>{{ config.get_message('config.language_settings_english_value') }}</option>
+                        <option value="pt_br" {{ 'selected' if config.get('LANGUAGE', '') == 'pt_br' else '' }}>{{ config.get_message('config.language_settings_brazilian_portuguese_value') }}</option>
+                    </select>
+                </div>
+                <small>{{ config.get_message('config.language_settings_help_text') }}</small>
+            </div>
+
+            <button type="submit">{{ config.get_message('config.save_button') }}</button>
         </form>
     </div>
 </body>

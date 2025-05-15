@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authentication Successful</title>
+    <title>{{ config.get_message('auth.title_success') }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Authentication Successful!</h1>
-        <p>Your application is now authenticated with Twitch.</p>
-        <p>You can close this window or <a href="/config">go to the Configuration page</a>.</p>
+        <h1>{{ config.get_message('auth.header_success') }}</h1>
+        <p>{{ config.get_message('auth.app_authenticated_message') }}</p>
+        <p>{{ config.get_message('auth.can_close_or_config_message_part1') }} <a href="/config">{{ config.get_message('auth.config_page_link_text') }}</a>.</p>
     </div>
 </body>
 </html>
