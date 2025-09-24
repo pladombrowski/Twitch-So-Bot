@@ -1,0 +1,105 @@
+auth:
+  callback_success: "Authentication successful! You can close this window."
+  callback_error: "Authentication failed: {details}"
+  title_success: "Authentication Successful"
+  header_success: "Authentication Successful!"
+  app_authenticated_message: "Your application is now authenticated with Twitch."
+  can_close_or_config_message_part1: "You can close this window or"
+  config_page_link_text: "go to the Configuration page"
+  title_error: "Authentication Failed"
+  header_error: "Authentication Failed"
+  please_authorize: "Please authorize the application: {auth_url}"
+
+config:
+  # Mensagens de status do processo de configuração
+  incomplete: "Configuration is incomplete. Please access http://localhost:5000/config or https://localhost:5000/config to configure the application."
+  waiting: "Waiting for configuration update..."
+  updated: "Configuration updated. Proceeding to start bot..."
+  loaded_success: "Configuration loaded successfully. Starting bot..."
+  settings_saved: "Settings saved and application will start!"
+  error_saving: "Error: {error}"
+  warning_lang_file_not_found: "Warning: Language file {lang_file} not found. Using English defaults."
+  error_en_lang_file_missing: "Error: English language file (lang_en.yaml) not found. Cannot load messages."
+
+  # Textos para a página de configuração (config.html)
+  title: "Application Configuration" # Título da página e H1 principal
+  save_button: "Save Settings"
+
+  twitch_settings_header: "Twitch Settings"
+  twitch_username_label: "Twitch Username:"
+  client_id_label: "Client ID:"
+  client_secret_label: "Client Secret:"
+  max_video_time_label: "Max Video Time (seconds)" # Usado no backend, pode ser reutilizado se o texto for igual
+  form_max_video_time_label: "Max video time in seconds:" # Label específico do formulário
+
+  hourly_restriction_header: "Hourly Restriction"
+  blocked_period_label: "Blocked Period (HH-HH)" # Usado no backend, pode ser reutilizado
+  form_blocked_period_label: "Block commands between:" # Label específico do formulário
+  block_hours_info: "hours (0-23)"
+  and_separator: "and"
+  block_period_help_text: "Commands will be blocked during this period"
+
+  obs_settings_header: "OBS Settings"
+  obs_host_label: "OBS Host:"
+  obs_port_label: "OBS Port:"
+  obs_password_label: "OBS WebSocket Password:"
+
+  authorized_users_header: "Authorized Users"
+  authorized_users_label: "Authorized Users (comma-separated)" # Usado no backend, pode ser reutilizado
+  form_authorized_users_label: "Permitted usernames (comma-separated):" # Label específico do formulário
+  authorized_users_placeholder: "E.g.: your_username,moderator1,moderator2"
+  authorized_users_help_text: "Add the exact Twitch usernames of users who can use commands"
+
+  content_settings_header: "Content Settings"
+  content_types_label: "Content Types" # Usado no backend, pode ser reutilizado
+  form_allowed_content_types_label: "Allowed content types:" # Label específico do formulário
+  content_type_clips: "Clips"
+  content_type_videos: "Videos"
+  content_type_highlights: "Highlights"
+
+  log_settings_header: "Log Settings"
+  log_file_path_label: "Log file path:"
+  log_file_path_placeholder: "E.g.: command_log.csv"
+  log_file_path_help_text: "CSV file with history of executed commands"
+
+  language_settings_header: "Language Configurations"
+  language_settings_label: "Selected Language"
+  language_settings_english_value: "English"
+  language_settings_brazilian_portuguese_value: "Brazilian Portuguese"
+  language_settings_help_text: "Select your prefered language."
+
+  # Erros de validação do formulário de configuração
+  error_authorized_users_required: "At least one authorized user must be specified"
+  error_invalid_hours: "Hours must be between 00 and 23"
+
+bot:
+  permission_denied: "❌ You do not have permission to use this command!"
+  invalid_command_format: "Correct format: !so <channel_name> or !so clean_queue"
+  invalid_channel_name: "Invalid channel name"
+  command_blocked: "⏰ The !so command is blocked at this time!"
+  add_to_queue: "🎥 Content from {channel_name} added to the queue! Position: {queue_position}"
+  playing_now: "🎥 Playing content from {channel_name}!"
+  play_error: "❌ Error: {error_msg}"
+  queue_cleared: "🧹 Queue cleared ({count} items removed)"
+  clear_queue_error: "❌ Error clearing queue: {error_msg}"
+  internal_error: "🔧 Internal error processing request"
+  internal_error_cleaning_queue: "🔧 Internal error while clearing the queue"
+  channel_not_found: "Channel not found: {channel}"
+  no_content_found: "No content found for channel: {channel}"
+  removing_video_in: "Removing video in {seconds} seconds..."
+  removing_video: "Removing video!"
+  error_removing_scene: "Error removing scene: {error}" # Console
+  connected: "Bot connected as {nick}" # Console
+  invalid_token_refreshing: "Invalid token, trying to refresh..." # Console
+  token_refresh_failed: "Token refresh failed. Authentication required." # Console
+  auth_failed_bot_start: "Failed to obtain a valid token after authentication. Bot cannot start." # Console
+
+app: # Mensagens de console relacionadas ao ciclo de vida da aplicação
+  restarting_bot: "Restarting bot with new configuration..."
+  auth_required_or_refresh_failed: "Authentication required or token refresh failed..."
+  shutting_down: "Shutting down application..."
+
+errors: # Erros genéricos ou da API
+  authorization_code_missing: "Authorization code missing"
+  authentication_failed: "Authentication failed"
+  channel_name_required: "Channel name required"
