@@ -7,3 +7,5 @@ asqlite~=2.0.0
 pyOpenSSL~=24.0.0
 cryptography~=42.0.0
 aiohttp~=3.9.5
+obs-websocket-py
+gTTS~=2.4.0

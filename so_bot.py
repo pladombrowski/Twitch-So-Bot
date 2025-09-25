@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Any, Union
 import urllib3
 import aiohttp
 import os # Import os to list language files
+import importlib
 
 # Disable warnings for insecure requests (necessary for self-signed certificates)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -108,7 +109,7 @@ class Config:
             if message is None:
                 print(f"Warning: Message key '{key}' not found in language file.")
                 return key # Return the key itself if not found
-        
+
         if isinstance(message, str):
             try:
                 return message.format(**kwargs)
@@ -195,13 +196,22 @@ class TokenManager:
     async def get_valid_token(self) -> Optional[str]:
         """Get a valid access token, refreshing if necessary"""
         tokens = self.load_tokens()
+        print(f"🔍 Tokens carregados: {bool(tokens)}")
+        
+        if tokens:
+            print(f"⏰ Token expira em: {tokens.get('expires_at', 'N/A')}")
+            print(f"🕐 Tempo atual: {time.time()}")
+            print(f"⏳ Diferença: {tokens.get('expires_at', 0) - time.time() if tokens.get('expires_at') else 'N/A'}")
 
         if tokens and tokens['expires_at'] > time.time() + 60:  # 1 minute margin
+            print("✅ Token ainda válido")
             return tokens['access_token']
 
         if tokens and await self.refresh_tokens(): # Made call async
+            print("🔄 Token renovado com sucesso")
             return self.load_tokens()['access_token']
 
+        print("❌ Token inválido ou ausente")
         return None
 
     async def get_app_access_token(self) -> Optional[str]:
@@ -419,7 +429,7 @@ class TwitchAPI:
                         cursor = data.get('pagination', {}).get('cursor')
                         if not cursor: # No more pages
                             break
-            
+
             filtered = []
             for v in videos:
                 try:
@@ -451,7 +461,7 @@ class TwitchAPI:
                 clip.update({
                     'content_type': 'clip',
                     'embed_url': f"https://clips.twitch.tv/embed?clip={clip['id']}&parent=twitch.tv&autoplay=true",
-                    'duration_seconds': clip['duration'] 
+                    'duration_seconds': clip['duration']
                 })
             content.extend(clips_data)
 
@@ -478,7 +488,7 @@ class TwitchAPI:
                     'duration_seconds': self._interval_string_to_seconds(highlight['duration'])
                 })
             content.extend(highlights_data)
-        
+
         # Filter by duration and update cache
         # Ensure duration_seconds is present and is a number before filtering
         filtered_content = [c for c in content if isinstance(c.get('duration_seconds'), (int, float)) and c['duration_seconds'] <= max_video_time]
@@ -531,8 +541,8 @@ class OBSController:
     def create_browser_source(self, video_url: str) -> None:
         """Create or update browser source in OBS"""
         ws = obsws(
-            self.config.get('OBS_HOST'), 
-            self.config.get('OBS_PORT'), 
+            self.config.get('OBS_HOST'),
+            self.config.get('OBS_PORT'),
             self.config.get('OBS_PASSWORD')
         )
         try:
@@ -610,8 +620,8 @@ class OBSController:
             print(self.config.get_message('bot.removing_video'))
 
             ws = obsws(
-                self.config.get('OBS_HOST'), 
-                self.config.get('OBS_PORT'), 
+                self.config.get('OBS_HOST'),
+                self.config.get('OBS_PORT'),
                 self.config.get('OBS_PASSWORD')
             )
             try:
@@ -635,11 +645,185 @@ class OBSController:
         # Start removal in a separate thread to not block
         threading.Thread(target=delayed_remove, daemon=True).start()
 
+    def create_audio_source(self, audio_path: str, duration: float):
+        """Create audio source in OBS for playback"""
+        def create_and_remove():
+            ws = obsws(
+                self.config.get('OBS_HOST'),
+                self.config.get('OBS_PORT'),
+                self.config.get('OBS_PASSWORD')
+            )
+            try:
+                ws.connect()
+                
+                # Create audio source (use same scene as !so command)
+                source_name = "Salmos Audio"
+                scene_name = "Twitch Auto"  # Use same scene as !so command
+                
+                # Try to remove existing source if it exists
+                try:
+                    scene_item_id = ws.call(obs_requests.GetSceneItemId(
+                        sceneName=scene_name,
+                        sourceName=source_name
+                    )).datain.get('sceneItemId')
+                    
+                    if scene_item_id:
+                        ws.call(obs_requests.RemoveSceneItem(
+                            sceneName=scene_name,
+                            sceneItemId=scene_item_id
+                        ))
+                        time.sleep(0.5)
+                except Exception:
+                    pass  # Ignore if source doesn't exist
+                
+                # Create browser source for audio using local HTTP server
+                import urllib.parse
+                import http.server
+                import socketserver
+                import threading
+                
+                # Start a simple HTTP server to serve the audio file
+                audio_filename = os.path.basename(audio_path)
+                audio_dir = os.path.dirname(audio_path)
+                
+                # Get available port first
+                with socketserver.TCPServer(("", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+                    port = httpd.server_address[1]
+                
+                # Create a simple HTTP server in a separate thread
+                def start_audio_server():
+                    os.chdir(audio_dir)
+                    with socketserver.TCPServer(("", port), http.server.SimpleHTTPRequestHandler) as httpd:
+                        print(f"Starting audio server on port {port}")
+                        httpd.serve_forever()
+                
+                # Start server in background
+                server_thread = threading.Thread(target=start_audio_server, daemon=True)
+                server_thread.start()
+                time.sleep(1)  # Give server time to start
+                
+                # Create audio URL using local server
+                audio_url = f"http://localhost:{port}/{audio_filename}"
+                
+                # Create HTML audio player with autoplay
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {{ margin: 0; padding: 0; background: transparent; }}
+                        audio {{ width: 100%; height: 100%; }}
+                    </style>
+                </head>
+                <body>
+                    <audio controls autoplay>
+                        <source src="{audio_url}" type="audio/wav">
+                        Your browser does not support the audio element.
+                    </audio>
+                </body>
+                </html>
+                """
+                
+                settings = {
+                    "url": f"data:text/html,{urllib.parse.quote(html_content)}",
+                    "width": 1920,
+                    "height": 1080,
+                    "css": "body {{ margin: 0; overflow: hidden; background: transparent; }}",
+                    "reroute_audio": True,
+                    "restart_when_active": True
+                }
+                
+                print(f"Creating audio source in scene: {scene_name}")
+                print(f"Audio file path: {audio_path}")
+                print(f"HTML audio player created")
+                
+                creation_response = ws.call(obs_requests.CreateInput(
+                    sceneName=scene_name,
+                    inputName=source_name,
+                    inputKind="browser_source",
+                    inputSettings=settings,
+                    enabled=True
+                ))
+                
+                print(f"OBS creation response status: {creation_response.status}")
+                print(f"OBS creation response data: {creation_response.datain}")
+                
+                if not creation_response.status:
+                    print(f"OBS creation response: {creation_response.datain}")
+                    raise Exception("Failed to create OBS audio source")
+                
+                # Wait a bit for the source to be created
+                time.sleep(1)
+                
+                # Make the source visible and active
+                try:
+                    scene_item_id = creation_response.datain.get('sceneItemId')
+                    if scene_item_id:
+                        # Set source to visible
+                        ws.call(obs_requests.SetSceneItemEnabled(
+                            sceneName=scene_name,
+                            sceneItemId=scene_item_id,
+                            sceneItemEnabled=True
+                        ))
+                        print(f"Audio source made visible (ID: {scene_item_id})")
+                        
+                        # Set source to active/selected
+                        ws.call(obs_requests.SetSceneItemSelected(
+                            sceneName=scene_name,
+                            sceneItemId=scene_item_id,
+                            sceneItemSelected=True
+                        ))
+                        print("Audio source activated")
+                        
+                except Exception as e:
+                    print(f"Warning: Could not make source visible: {str(e)}")
+                
+                # Enable audio monitoring for streamer only (no output to live stream)
+                try:
+                    ws.call(obs_requests.SetInputAudioMonitorType(
+                        inputName=source_name,
+                        monitorType="OBS_MONITORING_TYPE_MONITOR_ONLY"
+                    ))
+                    print("Audio monitoring enabled for streamer only (no live output)")
+                except Exception as e:
+                    print(f"Warning: Could not set audio monitoring: {str(e)}")
+                
+                print(f"Audio source created successfully: {audio_path}")
+                
+                # Schedule removal after duration
+                print(f"Removing audio in {duration} seconds...")
+                time.sleep(duration)
+                
+                # Remove the audio source
+                try:
+                    scene_item_id = ws.call(obs_requests.GetSceneItemId(
+                        sceneName=scene_name,
+                        sourceName=source_name
+                    )).datain.get('sceneItemId')
+                    
+                    if scene_item_id:
+                        ws.call(obs_requests.RemoveSceneItem(
+                            sceneName=scene_name,
+                            sceneItemId=scene_item_id
+                        ))
+                        print("Audio source removed!")
+                except Exception as e:
+                    print(f"Error removing audio source: {str(e)}")
+                    
+            except Exception as e:
+                print(f"OBS Error creating audio source: {str(e)}")
+                raise
+            finally:
+                ws.disconnect()
+        
+        # Start audio playback in a separate thread
+        threading.Thread(target=create_and_remove, daemon=True).start()
+
 
 class TwitchBot(commands.Bot):
     """Twitch bot for handling chat commands"""
 
-    def __init__(self, token: str, config: Config, token_manager: TokenManager, 
+    def __init__(self, token: str, config: Config, token_manager: TokenManager,
                  time_blocker: TimeBlocker, command_logger: CommandLogger):
         """Initialize Twitch bot"""
         self.config = config
@@ -647,6 +831,9 @@ class TwitchBot(commands.Bot):
         self.time_blocker = time_blocker
         self.command_logger = command_logger
         self.restart_event = threading.Event()
+        self.commands_config = self.load_commands_config()
+
+        print(self.commands_config)
 
         # Token is now passed as an argument
         super().__init__(
@@ -656,6 +843,28 @@ class TwitchBot(commands.Bot):
             prefix='!',
             initial_channels=[self.config.get('TWITCH_USERNAME').lower()]
         )
+        
+        print(f"🔧 Bot configurado:")
+        print(f"   - Token: {'✅ Presente' if token else '❌ Ausente'}")
+        print(f"   - Client ID: {self.config.get('TWITCH_CLIENT_ID')}")
+        print(f"   - Username: {self.config.get('TWITCH_USERNAME')}")
+        print(f"   - Prefix: !")
+        print(f"   - Canais iniciais: {[self.config.get('TWITCH_USERNAME').lower()]}")
+
+    def load_commands_config(self, path: str = "commands.yaml") -> Dict[str, Any]:
+        """Load commands from a YAML file."""
+        try:
+            with open(path, "r") as file:
+                config = yaml.safe_load(file)
+                commands_dict = {cmd['name']: cmd for cmd in config.get('commands', [])}
+                print(f"Loaded {len(commands_dict)} commands: {list(commands_dict.keys())}")
+                return commands_dict
+        except FileNotFoundError:
+            print(f"Warning: {path} not found. No dynamic commands will be loaded.")
+            return {}
+        except Exception as e:
+            print(f"Error loading commands from {path}: {e}")
+            return {}
 
     async def monitor_restart(self):
         """Monitor for restart signal"""
@@ -670,7 +879,23 @@ class TwitchBot(commands.Bot):
 
     async def event_ready(self):
         """Called when the bot is ready"""
-        print(self.config.get_message('bot.connected', nick=self.nick))
+        print(f"✅ Bot conectado como {self.nick}")
+        print(f"📺 Canais conectados: {self.connected_channels}")
+        print(f"🎮 Comandos carregados: {list(self.commands_config.keys())}")
+        print("🚀 Bot está pronto para receber comandos!")
+        
+        # Teste de conexão - enviar uma mensagem de teste
+        try:
+            channel = self.get_channel(self.config.get('TWITCH_USERNAME').lower())
+            if channel:
+                await channel.send("🤖 Bot conectado e funcionando!")
+                print("✅ Mensagem de teste enviada com sucesso")
+            else:
+                print("❌ Canal não encontrado")
+        except Exception as e:
+            print(f"❌ Erro ao enviar mensagem de teste: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def event_error(self, error, data=None):
         """Handle errors"""
@@ -691,9 +916,61 @@ class TwitchBot(commands.Bot):
 
     async def event_message(self, message):
         """Handle incoming messages"""
+        print(f"📨 Mensagem recebida de {message.author.name}: {message.content}")
+        
         if message.echo:
+            print("🔄 Mensagem é echo, ignorando")
             return
-        await self.handle_commands(message)
+
+        if not message.content.startswith('!'):
+            print(f"❌ Mensagem não começa com prefixo '!', ignorando")
+            return
+
+        # Parse command and arguments
+        parts = message.content.lstrip('!').split()
+        command_name = parts[0].lower()
+        args = parts[1:]
+        print(f"🎯 Comando detectado: '{command_name}' com argumentos: {args}")
+        
+        # Check if it's a dynamic command
+        if command_name in self.commands_config:
+            print(f"✅ Comando '{command_name}' encontrado na configuração")
+            await self.handle_dynamic_command(message, command_name, args)
+        else:
+            # Handle built-in commands if any
+            print(f"❌ Comando '{command_name}' não encontrado nos comandos dinâmicos")
+            print(f"Comandos disponíveis: {list(self.commands_config.keys())}")
+
+    async def handle_dynamic_command(self, message, command_name, args):
+        """Dynamically handle a command based on the loaded configuration."""
+        if not self.is_user_authorized(message):
+            await message.channel.send(self.config.get_message('bot.permission_denied'))
+            return
+
+        command_info = self.commands_config[command_name]
+        action_path = command_info['action']
+        print(f"Executing command '{command_name}' with action '{action_path}' and args: {args}")
+
+        try:
+            module_name, function_name = action_path.rsplit('.', 1)
+            print(f"Importing module: actions.{module_name}, function: {function_name}")
+            
+            # Import the action module
+            action_module = importlib.import_module(f"actions.{module_name}")
+            action_function = getattr(action_module, function_name)
+
+            # Execute the action function
+            await action_function(message, self, *args)
+            print(f"Command '{command_name}' executed successfully")
+            
+        except (ImportError, AttributeError) as e:
+            print(f"Error loading action for command '{command_name}': {e}")
+            await message.channel.send(f"Erro ao carregar comando '{command_name}': {str(e)}")
+        except Exception as e:
+            print(f"Error executing command '{command_name}': {e}")
+            import traceback
+            traceback.print_exc()
+            await message.channel.send(self.config.get_message('bot.internal_error'))
 
     def is_user_authorized(self, ctx):
         """Check if user is authorized to use commands"""
@@ -703,64 +980,6 @@ class TwitchBot(commands.Bot):
             ctx.author.is_mod or
             ctx.author.name.lower() == self.config.get('TWITCH_USERNAME').lower()
         )
-
-
-    @commands.command(name='so')
-    async def shoutout_command(self, ctx, *args):
-        """Handle the !so command and its subcommands"""
-        if not self.is_user_authorized(ctx):
-            await ctx.send(self.config.get_message('bot.permission_denied'))
-            return
-
-        # Check for subcommands
-        if args and args[0].lower() == "clean_queue":
-            await self.clean_queue_subcommand(ctx)
-            return
-
-        # Regular !so command with channel name
-        channel_name = args[0] if args else None
-
-        if self.time_blocker.is_command_blocked():
-            await ctx.send(self.config.get_message('bot.command_blocked'))
-            return
-
-        if not channel_name:
-            await ctx.send(self.config.get_message('bot.invalid_command_format'))
-            return
-
-        if not re.match(r'^[a-zA-Z0-9_]{4,25}$', channel_name):
-            await ctx.send(self.config.get_message('bot.invalid_channel_name'))
-            return
-
-        try:
-            # Create a connector that skips SSL verification
-            connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.post(
-                    'https://localhost:5000/play',
-                    json={'channel': channel_name},
-                    timeout=35
-                ) as response:
-                    if response.status == 200:
-                        self.command_logger.log_command(
-                            command='so',
-                            channel=channel_name.lower(),
-                            requester=ctx.author.name
-                        )
-                        response_data = await response.json()
-                        queue_position = response_data.get('queue_position', 1)
-
-                        if queue_position > 1:
-                            await ctx.send(self.config.get_message('bot.add_to_queue', channel_name=channel_name, queue_position=queue_position))
-                        else:
-                            await ctx.send(self.config.get_message('bot.playing_now', channel_name=channel_name))
-                    else:
-                        error_msg = (await response.json()).get('error', 'Erro desconhecido')
-                        await ctx.send(self.config.get_message('bot.play_error', error_msg=error_msg))
-
-        except Exception as e:
-            print(f"Error in request: {str(e)}") # Keep f-string for error details
-            await ctx.send(self.config.get_message('bot.internal_error'))
 
     async def clean_queue_subcommand(self, ctx):
         """Handle the !so clean_queue subcommand"""
@@ -789,7 +1008,7 @@ class TwitchBot(commands.Bot):
 class FlaskApp:
     """Flask web application for configuration and API endpoints"""
 
-    def __init__(self, config: Config, token_manager: TokenManager, 
+    def __init__(self, config: Config, token_manager: TokenManager,
                  twitch_api: TwitchAPI, obs_controller: OBSController):
         """Initialize Flask app"""
         self.app = Flask(__name__)
@@ -856,7 +1075,7 @@ class FlaskApp:
                 #                        is_error=True)
                 error_message_key = 'errors.authentication_failed'
                 error_message_details_key = 'auth.callback_error'
-                
+
                 # Fetch localized messages
                 main_error = self.config.get_message(error_message_key)
                 detailed_error = self.config.get_message(error_message_details_key, details=error_details)
@@ -903,6 +1122,30 @@ class FlaskApp:
                 # Use localized message for error
                 error_message = self.config.get_message('bot.internal_error')
                 return jsonify({'error': error_message}), 500
+
+        @self.app.route('/play_audio', methods=['POST'])
+        def play_audio():
+            """API endpoint to play audio file in OBS"""
+            try:
+                data = request.json
+                audio_path = data.get('audio_path')
+                duration = data.get('duration', 30)
+                
+                if not audio_path:
+                    return jsonify({'error': 'Audio path required'}), 400
+                
+                # Create audio source in OBS
+                self.obs_controller.create_audio_source(audio_path, duration)
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Audio playback started',
+                    'duration': duration
+                }), 200
+                
+            except Exception as e:
+                print(f"Error playing audio: {str(e)}")
+                return jsonify({'error': 'Internal server error'}), 500
 
         @self.app.route('/clean_queue', methods=['POST'])
         def clean_queue():
@@ -997,7 +1240,7 @@ class FlaskApp:
 
                 self.is_playing = True
                 channel = self.command_queue.pop(0)
-            
+
             # Create a new event loop for this thread if one doesn't exist
             try:
                 loop = asyncio.get_event_loop()
@@ -1077,6 +1320,8 @@ class Application:
 
                 # Perform async token checks and refresh if necessary
                 valid_token = loop.run_until_complete(self.token_manager.get_valid_token())
+                print(f"🔑 Token status: {'✅ Válido' if valid_token else '❌ Inválido/Ausente'}")
+                
                 if not valid_token:
                     print(self.config.get_message('app.auth_required_or_refresh_failed'))
                     # Start auth flow (synchronous) and wait for completion
@@ -1093,16 +1338,17 @@ class Application:
                 # If loop was created here, run the bot in it.
                 # If loop was pre-existing, tasks will be scheduled on it.
                 # Pass the fetched valid_token to the TwitchBot constructor
-                bot = TwitchBot(token=valid_token, 
-                                config=self.config, 
-                                token_manager=self.token_manager, 
-                                time_blocker=self.time_blocker, 
+                print(f"🤖 Iniciando bot com token: {valid_token[:10]}..." if valid_token else "❌ Sem token")
+                bot = TwitchBot(token=valid_token,
+                                config=self.config,
+                                token_manager=self.token_manager,
+                                time_blocker=self.time_blocker,
                                 command_logger=self.command_logger)
                 bot.restart_event = self.restart_bot_event
-                
+
                 # The token is set during super().__init__ now.
                 # If _connection needs explicit update after init, it would be:
-                # bot._connection._token = valid_token 
+                # bot._connection._token = valid_token
                 # However, twitchio's commands.Bot should handle this if token is passed to __init__.
 
                 loop.run_until_complete(bot.start())

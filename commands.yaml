@@ -1,0 +1,14 @@
+commands:
+  - name: "so"
+    action: "shoutout.play_video_from_channel_on_obs"
+    description: "Plays random videos from specified channel(s) on OBS. Supports multiple channels: !so canal1 canal2 or !so canal1,canal2,canal3"
+    params:
+      - name: "channels"
+        type: "string"
+        description: "One or more channel names separated by spaces or commas"
+  - name: "salmos"
+    action: "salmos.play_phrase_as_audio_on_obs"
+    description: "Plays a phrase as audio on OBS."
+    params:
+      - name: "phrase"
+        type: "string"
